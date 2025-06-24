@@ -4,5 +4,5 @@ System dynamics model that examines the interactions of Glasgow Thriving indicat
 ## Run locally
 
 '''bash
-pip install -r requirements.txt
+pip3 install -r requirements.txt
 marimo run app.py
