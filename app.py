@@ -1,15 +1,21 @@
-import marimo
+'''
+Useful commands to run this app:
+python3  -m venv streamlitEnv
+source streamlitEnv/bin/activate
+pip3 install -r requirements.txt
+python3 -m streamlit run app.py
+git status
+git commit -m "Add simple Streamlit app with slider"
+'''
+import streamlit as st
 
-__generated_with = "0.4.0"  # adjust to your marimo version
+st.title("Indicator system modelling: Proof of Concept")
 
-app = marimo.App()
+# Create slider
+number = st.slider("Select a value", min_value=0, max_value=100, value=50)
 
-@app.cell
-def _(mo):
-    x = mo.ui.slider(0, 100, value=50)
-    x
-    return x
+# Show the selected value
+st.write(f"You selected: {number}")
 
-@app.cell
-def _(x):
-    f"The value squared is {x.value ** 2}"
+# Do something with the value — e.g. square it
+st.write(f"The square of {number} is {number ** 2}")
