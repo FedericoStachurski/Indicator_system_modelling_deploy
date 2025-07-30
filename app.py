@@ -7,10 +7,11 @@ python3 -m streamlit run app.py
 
 
 Useful commands to set up a git repository:
+cd /Users/cris.hasan/Desktop/online_github_repositories/Indicator_system_modelling/
 git init
 git status
-git add app.py
-git commit -m "Add dynamic variables and plot results"
+git add .
+git commit -m "Incoprporate additional dynamic variables and plot results"
 git branch -M main 
 git push -u origin main
 '''
