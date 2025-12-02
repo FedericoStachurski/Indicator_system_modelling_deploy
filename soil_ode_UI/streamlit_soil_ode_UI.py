@@ -1,205 +1,382 @@
-## User Interface ODE Soil Model
 #!/usr/bin/env python3
+"""
+app_soil_streamlit.py
+
+Streamlit UI for the multi-land soil model.
+"""
 
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.integrate import solve_ivp
 import streamlit as st
 
-
-# ------------------------------------------------------------
-# ODE system and helper functions
-# ------------------------------------------------------------
-
-def degradation_constant(t, params):
-    return params["D_const"]
-
-
-def degradation_phaseout(t, params):
-    return params["D_high"] if t < params["T_int"] else params["D_low"]
-
-def degredation_natural_synthetic(t, params):
-    """Example of more complex degradation function (not used in UI)."""
-    alpha, beta = params.get("alpha", 0.5), params.get("beta", 0.5)
-    a0 , a1 = params.get("a0", 1.0), params.get("a1", 1)
-    x = alpha * t
-    y = beta * t
-    return a0 * np.exp(-x) + a1 * (1 - np.exp(-y))
-
-
-SCENARIOS = {
-    "Constant degradation D": degradation_constant,
-    "Phase-out at T_int": degradation_phaseout,
-    "Natural to synthetic": degredation_natural_synthetic,
-}
-
-
-def soil_ode(t, S, alpha, D_fun, D_params):
-    """Soil dynamics: dS/dt = (alpha - D(t)) * S * (1 - S)"""
-    D_t = D_fun(t, D_params)
-    return (alpha - D_t) * S * (1.0 - S)
-
-
-def compute_solution(alpha, S0, T_max, scenario_name, params, n_points=500):
-    """Solve the ODE and return arrays for plotting."""
-    D_fun = SCENARIOS[scenario_name]
-    t_eval = np.linspace(0.0, T_max, n_points)
-
-    sol = solve_ivp(
-        soil_ode,
-        t_span=(0.0, T_max),
-        y0=[S0],
-        t_eval=t_eval,
-        args=(alpha, D_fun, params),
-    )
-
-    t = sol.t
-    S = sol.y[0]
-    D_vals = np.array([D_fun(tt, params) for tt in t])
-
-    return t, S, D_vals
-
-
-
-
-
-# ---------------- Sidebar Controls ---------------- #
-
-st.sidebar.header("Model parameters")
-
-scenario_name = st.sidebar.selectbox(
-    "Degradation scenario:",
-    list(SCENARIOS.keys()),
-    index=1,
+from soil_model_core import (
+    LandConfig,
+    simulate_multi_land,
+    SCENARIOS,
 )
 
-alpha = st.sidebar.slider("Intrinsic recovery rate α", 0.01, 0.5, 0.20, 0.01)
-S0 = st.sidebar.slider("Initial soil health S₀", 0.01, 1.0, 0.8, 0.01)
-T_max = st.sidebar.slider("Simulation horizon T_max", 20.0, 250.0, 100.0, 10.0)
+
+# ------------------------------------------------------------
+# Streamlit page setup
+# ------------------------------------------------------------
+
+st.set_page_config(page_title="Soil Health Multi-Land Tool", layout="wide")
+st.title("Soil Health & Production Across Multiple Lands")
+
+# st.markdown(
+#     """
+# This app simulates soil health and production for multiple land parcels.
+# Each land can have its **own** degradation model and parameters.
+
+# - Top-left: soil and production trajectories  
+# - Top-right: a **doughnut environmental chart** (placeholder)  
+# - Bottom: controls for each land (up to 10)
+# """
+# )
+
+st.markdown("---")
+
+# We’ll use containers to control layout order: plots on top, controls below.
+plots_container = st.container()
+controls_container = st.container()
+
+
+# ------------------------------------------------------------
+# Global / simulation controls (sidebar)
+# ------------------------------------------------------------
+
+st.sidebar.header("Global simulation settings")
+
+T_max = st.sidebar.slider("Simulation horizon T_max", 10.0, 250.0, 100.0, 10.0)
+n_points = 500  # fixed for now; you can expose this if needed
 
 st.sidebar.markdown("---")
+st.sidebar.header("Default values for new lands")
+default_alpha = st.sidebar.slider("Default α", 0.01, 0.5, 0.20, 0.01)
+default_S0 = st.sidebar.slider("Default S₀", 0.01, 1.0, 0.8, 0.01)
+default_P_max = st.sidebar.slider("Default P_max", 0.0, 10.0, 1.0, 0.1)
 
-params = {}
-
-if scenario_name == "Constant degradation D":
-    params["D_const"] = st.sidebar.slider("D (constant)", 0.0, 1.0, 0.1, 0.01)
-
-elif scenario_name == "Phase-out at T_int":  # phase-out
-    params["D_high"] = st.sidebar.slider("D_high (pre-intervention)", 0.0, 1.0, 0.4, 0.01)
-    params["D_low"] = st.sidebar.slider("D_low (post-intervention)", 0.0, 1.0, 0.05, 0.01)
-    params["T_int"] = st.sidebar.slider("Intervention time T_int", 0.0, T_max, 30.0, 1.0)
-
-elif scenario_name == "Natural to synthetic":
-    params["a0"] = st.sidebar.slider("a0 (natural degradation)", 0.0, 1.0, 0.5, 0.01)
-    params["a1"] = st.sidebar.slider("a1 (synthetic degradation)", 0.0, 1.0, 0.5, 0.01) 
-    params["alpha"] = st.sidebar.slider("alpha, natural rate of degradation", 0.0, 1.0, 0.5, 0.01)
-    params["beta"] = st.sidebar.slider("beta, synthetic rate of degredation factor", 0.0, 1.0, 0.5, 0.01) 
 
 # ------------------------------------------------------------
-# Streamlit UI
+# Bottom controls: land editor
 # ------------------------------------------------------------
 
-def math_model_Dt_scenario(scenario_name):
-    if scenario_name == "Constant degradation D":
-        return r"D(t) = D_{const}"
-    elif scenario_name == "Phase-out at T_int":
-        return r"""
-        D(t) = \begin{cases} 
-        D_{high}, & t < T_{int} \\ 
-        D_{low}, & t \geq T_{int} 
-        \end{cases}
-        """
-    elif scenario_name == "Natural to synthetic":
-        return r"D(t) = a_0 e^{-\alpha t} + a_1 (1 - e^{-\beta t})"
+with controls_container:
+    st.subheader("Land configuration")
+
+    # Manage number of lands via session_state so the 'Add land' button works nicely.
+    if "n_lands" not in st.session_state:
+        st.session_state.n_lands = 1
+
+    cols_buttons = st.columns([1, 1, 6])
+    with cols_buttons[0]:
+        if st.button("➕ Add land"):
+            if st.session_state.n_lands < 10:
+                st.session_state.n_lands += 1
+    with cols_buttons[1]:
+        if st.button("➖ Remove last land"):
+            if st.session_state.n_lands > 1:
+                st.session_state.n_lands -= 1
+
+    n_lands = st.session_state.n_lands
+    st.markdown(f"**Number of lands:** {n_lands}")
+
+    st.markdown(
+        "For each land, set its name, land share, soil parameters, and degradation model."
+    )
+
+    land_percentages = []
+    land_configs_raw = []
+
+    # One "card" per land
+    for i in range(n_lands):
+        with st.expander(f"Land {i+1} settings", expanded=(i == 0)):
+            name = st.text_input(
+                "Land name",
+                value=f"Land {i+1}",
+                key=f"name_{i}",
+            )
+
+            # Land area share
+            land_pct = st.number_input(
+                "Land share (%)",
+                min_value=0.0,
+                max_value=100.0,
+                value=100.0 / n_lands,
+                step=1.0,
+                key=f"land_pct_{i}",
+            )
+            land_percentages.append(land_pct)
+
+            st.markdown("**Soil dynamics**")
+
+            alpha_i = st.slider(
+                "Intrinsic recovery rate α",
+                0.0,
+                1.0,
+                default_alpha,
+                0.01,
+                key=f"alpha_{i}",
+            )
+
+            S0_i = st.slider(
+                "Initial soil health S₀",
+                0.0,
+                1.0,
+                default_S0,
+                0.01,
+                key=f"S0_{i}",
+            )
+
+            P_max_i = st.slider(
+                "Maximum yield P_max",
+                0.0,
+                10.0,
+                default_P_max,
+                0.1,
+                key=f"Pmax_{i}",
+            )
+
+            st.markdown("**Degradation model**")
+            scenario_options = list(SCENARIOS.keys())
+            scenario_name = st.selectbox(
+                "Degradation scenario",
+                scenario_options,
+                key=f"scenario_{i}",
+            )
+
+            # Scenario-specific parameters
+            deg_params = {}
+            if scenario_name == "Constant degradation D":
+                D_const = st.slider(
+                    "D_const",
+                    0.0,
+                    1.0,
+                    0.1,
+                    0.01,
+                    key=f"D_const_{i}",
+                )
+                deg_params["D_const"] = D_const
+
+            elif scenario_name == "Phase-out at T_int":
+                D_high = st.slider(
+                    "D_high (pre-intervention)",
+                    0.0,
+                    1.0,
+                    0.4,
+                    0.01,
+                    key=f"D_high_{i}",
+                )
+                D_low = st.slider(
+                    "D_low (post-intervention)",
+                    0.0,
+                    1.0,
+                    0.05,
+                    0.01,
+                    key=f"D_low_{i}",
+                )
+                T_int = st.slider(
+                    "Intervention time T_int",
+                    0.0,
+                    T_max,
+                    min(T_max / 3, 30.0),
+                    1.0,
+                    key=f"T_int_{i}",
+                )
+                deg_params["D_high"] = D_high
+                deg_params["D_low"] = D_low
+                deg_params["T_int"] = T_int
+
+            elif scenario_name == "Natural to synthetic":
+                a0 = st.slider(
+                    "a0 (natural degradation)",
+                    0.0,
+                    1.0,
+                    0.5,
+                    0.01,
+                    key=f"a0_{i}",
+                )
+                a1 = st.slider(
+                    "a1 (synthetic degradation)",
+                    0.0,
+                    1.0,
+                    0.5,
+                    0.01,
+                    key=f"a1_{i}",
+                )
+                alpha_deg = st.slider(
+                    "alpha (natural decay rate)",
+                    0.0,
+                    1.0,
+                    0.5,
+                    0.01,
+                    key=f"alpha_deg_{i}",
+                )
+                beta_deg = st.slider(
+                    "beta (synthetic onset rate)",
+                    0.0,
+                    1.0,
+                    0.5,
+                    0.01,
+                    key=f"beta_deg_{i}",
+                )
+                deg_params["a0"] = a0
+                deg_params["a1"] = a1
+                deg_params["alpha"] = alpha_deg
+                deg_params["beta"] = beta_deg
+
+            # Store raw info; we'll normalise land_pct later
+            land_configs_raw.append(
+                dict(
+                    name=name,
+                    alpha=alpha_i,
+                    S0=S0_i,
+                    scenario_name=scenario_name,
+                    deg_params=deg_params,
+                    land_pct=land_pct,
+                    P_max=P_max_i,
+                )
+            )
+
+    # Normalise land percentages to fractions
+    total_pct = sum(land_percentages)
+    if total_pct > 0:
+        land_fractions = [p / total_pct for p in land_percentages]
     else:
-        return ""
+        land_fractions = [1.0 / n_lands] * n_lands
+
+    st.markdown(
+        f"**Normalised total land = {sum(land_fractions):.2f} (should be 1.00)**"
+    )
+
+    # Build LandConfig objects
+    lands = []
+    for i, cfg in enumerate(land_configs_raw):
+        lands.append(
+            LandConfig(
+                name=cfg["name"],
+                alpha=cfg["alpha"],
+                S0=cfg["S0"],
+                scenario_name=cfg["scenario_name"],
+                deg_params=cfg["deg_params"],
+                land_fraction=land_fractions[i],
+                P_max=cfg["P_max"],
+            )
+        )
 
 
-st.set_page_config(page_title="Soil Health ODE Tool", layout="wide")
-st.title("Soil Health Feedback Mechanisms (Interactive ODE Tool)")
+# ------------------------------------------------------------
+# Run simulation & plot (top)
+# ------------------------------------------------------------
 
-st.markdown(
-    """
-This tool simulates a simplified soil health system.
-The soil health index \\( S(t) $\in$ [0, 1] \\) evolves according to:
-"""
-)
+results = simulate_multi_land(lands, T_max=T_max, n_points=n_points)
 
-st.latex(r"\frac{dS}{dt} = (\alpha(S) - D(t))\,S(t)(1 - S(t))")
+t = results.t
+soils = results.soils
+productions = results.productions
+total_production = results.total_production
+weighted_soil = results.weighted_soil
+land_names = results.land_names
+land_fractions_arr = results.land_fractions
 
-st.markdown(
-    """
-where:
-
-- **S(t)** is soil health (0 = poorest, 1 = best)  
-- **α** is the intrinsic soil recovery rate  
-- **D(t)** is the degradation rate (e.g. synthetic fertilisers, intensive use)
-
-The functional form of \\(D(t)\\) is chosen via the scenario selector in the sidebar.
-"""
-)
-
-st.markdown(f"**Current scenario:** `{scenario_name}`")
-
-st.markdown("The corresponding model for \\(D(t)\\) is:")
-
-st.latex(math_model_Dt_scenario(scenario_name))
-
-st.markdown(
-    """
-Use the sliders in the sidebar to explore how different parameter choices
-affect the soil trajectory and whether it recovers or tips into a degraded state.
----
-"""
-)
-
-
-
-# ---------------- Run the simulation ---------------- #
-
-t, S, D_vals = compute_solution(alpha, S0, T_max, scenario_name, params)
-
-# Metrics
-S_final = S[-1]
-S_min = float(np.min(S))
+# Some simple metrics (weighted soil + total production)
+S_final = float(weighted_soil[-1])
+S_min = float(np.min(weighted_soil))
 S_target = 0.8
-reach_target = np.where(S >= S_target)[0]
+reach_target = np.where(weighted_soil >= S_target)[0]
 if len(reach_target) > 0:
     t_reach = t[reach_target[0]]
     recovery_note = f"t ≈ {t_reach:.1f}"
 else:
     recovery_note = "Not reached"
 
+P_final = float(total_production[-1])
+P_min = float(np.min(total_production))
+total_yield = float(np.trapezoid(total_production, t))
 
-# ---------------- Layout: metrics + plots ---------------- #
 
-col1, col2 = st.columns([1, 3])
+with plots_container:
+    col_main, col_donut = st.columns([3, 2])
 
-with col1:
-    st.subheader("Summary")
-    st.metric("Final S(T_max)", f"{S_final:.3f}")
-    st.metric("Minimum S(t)", f"{S_min:.3f}")
-    st.metric(f"Time to S ≥ {S_target}", recovery_note)
+    # ---------------- Main plots (top-left) ---------------- #
+    with col_main:
+        st.subheader("Soil and production trajectories")
 
-    st.markdown("**Scenario parameters:**")
-    st.write(params)
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(7, 6), sharex=True)
 
-with col2:
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(7, 5), sharex=True)
+        # (1) Soil trajectories per land + weighted average
+        for i, name in enumerate(land_names):
+            ax1.plot(t, soils[i], linewidth=1.5, label=name)
+        ax1.plot(
+            t,
+            weighted_soil,
+            linewidth=2.5,
+            linestyle="--",
+            label="Weighted avg soil",
+        )
+        ax1.axhline(0.1, linestyle="--", color="gray")
+        ax1.axhline(0.8, linestyle="--", color="gray")
+        ax1.set_ylabel("Soil S_i(t)")
+        ax1.set_ylim(-0.05, 1.05)
+        ax1.grid(True)
+        ax1.legend(fontsize="small")
 
-    # Soil health plot
-    ax1.plot(t, S, linewidth=2)
-    ax1.axhline(0.1, linestyle="--", color="gray")
-    ax1.axhline(0.8, linestyle="--", color="gray")
-    ax1.set_ylabel("Soil health S(t)")
-    ax1.set_ylim(-0.05, 1.05)
-    ax1.grid(True)
+        # (2) Production per land + total
+        for i, name in enumerate(land_names):
+            ax2.plot(t, productions[i], linewidth=1.5, label=f"P {name}")
+        ax2.plot(
+            t,
+            total_production,
+            linewidth=2.5,
+            linestyle="--",
+            label="Total P(t)",
+        )
+        ax2.set_xlabel("Time")
+        ax2.set_ylabel("Yield P_i(t)")
+        ax2.grid(True)
+        ax2.legend(fontsize="small")
 
-    # Degradation plot
-    ax2.plot(t, D_vals, linewidth=2)
-    ax2.set_xlabel("Time")
-    ax2.set_ylabel("Degradation D(t)")
-    ax2.grid(True)
+        fig.tight_layout()
+        st.pyplot(fig)
 
-    fig.tight_layout()
-    st.pyplot(fig)
+        # Text summary under the plots
+        st.markdown("**Summary (weighted over lands):**")
+        st.write(
+            {
+                "Final avg soil S̄(T_max)": f"{S_final:.3f}",
+                "Minimum avg soil S̄(t)": f"{S_min:.3f}",
+                "Time to S̄ ≥ 0.8": recovery_note,
+                "Final total yield P_tot(T_max)": f"{P_final:.3f}",
+                "Minimum total yield P_tot(t)": f"{P_min:.3f}",
+                "Cumulative total yield ∫ P_tot(t) dt": f"{total_yield:.3f}",
+            }
+        )
+
+    # ---------------- Doughnut chart (top-right) ---------------- #
+    with col_donut:
+        st.subheader("Environmental doughnut (placeholder)")
+
+        # For now, just use land fractions as a simple breakdown.
+        if land_fractions_arr.sum() > 0:
+            labels = [f"{name}" for name in land_names]
+            sizes = land_fractions_arr
+
+            fig_d, axd = plt.subplots(figsize=(4, 4))
+            wedges, _ = axd.pie(
+                sizes,
+                labels=labels,
+                startangle=90,
+                wedgeprops=dict(width=0.4, edgecolor="white"),
+            )
+            axd.set_title("Land share by owner")
+            st.pyplot(fig_d)
+        else:
+            st.info("No land fractions defined yet.")
+
+        st.markdown(
+            """
+            This doughnut chart is a placeholder.
+            You can later replace it with a proper
+            environmental / sustainability dashboard (e.g. soil, biodiversity, emissions).
+            """
+        )
