@@ -79,6 +79,12 @@ class SimulationResult:
     alphas: np.ndarray               # (n_lands,)
     P_max_vec: np.ndarray            # (n_lands,)
 
+    # NEW: harvest, prices, affordability
+    harvest_per_land: np.ndarray     # (n_lands, n_times)
+    total_harvest: np.ndarray        # (n_times,)
+    price: np.ndarray                # (n_times,)
+    affordability: np.ndarray        # (n_times,)
+
 
 # ------------------------------------------------------------
 # Core solver
@@ -103,11 +109,23 @@ def simulate_multi_land(
     lands: List[LandConfig],
     T_max: float,
     n_points: int = 500,
+    # ---- NEW econ parameters with defaults ----
+    harvest_fraction: float = 1.0,
+    price_demand_scale: float = 1.0,      # A in p = (A / Q)^(1/ε)
+    price_demand_elasticity: float = 0.8, # ε > 0
+    income: float = 1.0,                  # representative income
+    calories_per_unit: float = 1.0,       # calories per unit harvest
+    min_calories: float = 1.0,            # minimum calories per period
 ) -> SimulationResult:
     """
     Simulate soil and production dynamics for multiple lands.
 
     Each land is solved independently (1D ODE per land) using the same time grid.
+
+    NEW:
+    - harvest_per_land, total_harvest
+    - price from constant-elasticity inverse demand
+    - affordability index from income vs minimum calorie cost
     """
     if len(lands) == 0:
         raise ValueError("simulate_multi_land: need at least one LandConfig")
@@ -167,6 +185,36 @@ def simulate_multi_land(
     else:
         weighted_soil = soils.mean(axis=0)
 
+    # --------------------------------------------------------
+    # NEW: Harvest, price, and affordability
+    # --------------------------------------------------------
+
+    # Clamp harvest_fraction in [0, 1]
+    hf = float(np.clip(harvest_fraction, 0.0, 1.0))
+
+    # Harvest per land and total
+    harvest_per_land = hf * productions
+    total_harvest = harvest_per_land.sum(axis=0)
+
+    # Constant-elasticity inverse demand: p = (A / Q)^(1/ε)
+    tiny = 1e-8
+    eps = float(price_demand_elasticity) if price_demand_elasticity > 0 else 0.8
+    A = float(price_demand_scale)
+
+    Q_eff = np.maximum(total_harvest, tiny)
+    price = (A / Q_eff) ** (1.0 / eps)
+
+    # Affordability index: income / (cost of minimum calories)
+    # price_per_calorie = price / calories_per_unit
+    # C_min = price_per_calorie * min_calories
+    cal_per_unit_eff = max(calories_per_unit, tiny)
+    price_per_calorie = price / cal_per_unit_eff
+
+    C_min = price_per_calorie * float(min_calories)
+    C_min_eff = np.maximum(C_min, tiny)
+
+    affordability = float(income) / C_min_eff
+
     return SimulationResult(
         t=t_eval,
         soils=soils,
@@ -178,5 +226,8 @@ def simulate_multi_land(
         land_fractions=land_fractions_arr,
         alphas=alphas_arr,
         P_max_vec=P_max_arr,
+        harvest_per_land=harvest_per_land,
+        total_harvest=total_harvest,
+        price=price,
+        affordability=affordability,
     )
-
