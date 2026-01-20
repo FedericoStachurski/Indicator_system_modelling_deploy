@@ -2,6 +2,9 @@
 """
 app_soil_streamlit.py
 
+python3 -m streamlit run streamlit_soil_ode_UI.py
+
+
 Streamlit UI for the multi-land soil model.
 """
 
@@ -160,10 +163,10 @@ with controls_container:
             )
 
             P_max_i = st.slider(
-                "P_max (max yield)",
+                "P_max (max yield)", # tonnes/ha
                 0.0,
+                40.0,
                 10.0,
-                1.0,
                 0.1,
                 key=f"Pmax_{i}",
             )
@@ -298,7 +301,8 @@ with controls_container:
     st.markdown("---")
     st.subheader("Global settings")
 
-    T_max = st.slider("Simulation horizon T_max", 10.0, 250.0, 100.0, 10.0)
+    T_max = st.slider("Simulation horizon T_max", 10.0, 250.0, 50.0, 10.0, help="Total time to simulate (years)")
+    Pop_growth_rate = st.slider("Population growth rate", 0.0, 0.1, 0.02, 0.005, help="Annual population growth rate (fractional)")
     n_points = 500  # fixed
 
 # ------------------------------------------------------------
@@ -318,8 +322,11 @@ land_fractions_arr = results.land_fractions
 # From econ extension
 harvest_per_land = results.harvest_per_land   # (n_lands, n_times)
 total_harvest = results.total_harvest         # (n_times,)
+affordability_index = results.affordability_index         # (n_times,)
 affordability = results.affordability         # (n_times,)
-
+population = results.population     
+average_real_income = results.average_real_income
+self_sufficiency_ratio = results.self_sufficiency_ratio
 # ------------------------------------------------------------
 # TOP: row of 4 plots (Soil, Harvest, Production, Affordability)
 # with slightly higher resolution + black figure borders
@@ -328,7 +335,10 @@ affordability = results.affordability         # (n_times,)
 with plots_container:
     st.subheader("Key trajectories (compact view)")
 
-    col_soil, col_harvest, col_prod, col_aff = st.columns(4)
+    # First row of plots
+    col_soil, col_prod, col_pop = st.columns(3)
+    # Second row
+    col_ssr, col_income, col_aff_ind = st.columns(3)
 
     # Soil plot
     with col_soil:
@@ -342,38 +352,65 @@ with plots_container:
         ax_s.set_ylim(-0.05, 1.05)
         ax_s.tick_params(labelsize=6)
         ax_s.grid(True, linewidth=0.3)
+        ax_s.set_ylabel("Soil quality index", fontsize=7)
         st.pyplot(fig_s)
-
-    # Harvest plot
-    with col_harvest:
-        fig_hv, ax_hv = plt.subplots(figsize=(2.4, 1.6))
-        fig_hv.patch.set_edgecolor("black")
-        fig_hv.patch.set_linewidth(1.5)
-        ax_hv.plot(t, total_harvest, linewidth=0.9)
-        ax_hv.set_title("Harvest", fontsize=7)
-        ax_hv.tick_params(labelsize=6)
-        ax_hv.grid(True, linewidth=0.3)
-        st.pyplot(fig_hv)
 
     # Production plot
     with col_prod:
         fig_p, ax_p = plt.subplots(figsize=(2.4, 1.6))
         fig_p.patch.set_edgecolor("black")
         fig_p.patch.set_linewidth(1.5)
-        ax_p.plot(t, total_production, linewidth=0.9)
+        ax_p.plot(t, total_production/1e6, linewidth=0.9)
         ax_p.set_title("Production", fontsize=7)
         ax_p.tick_params(labelsize=6)
         ax_p.grid(True, linewidth=0.3)
+        ax_p.set_ylabel("Production (in million tonnes)", fontsize=7)
         st.pyplot(fig_p)
 
-    # Affordability plot
-    with col_aff:
-        fig_a, ax_a = plt.subplots(figsize=(2.4, 1.6))
-        fig_a.patch.set_edgecolor("black")
-        fig_a.patch.set_linewidth(1.5)
-        ax_a.plot(t, affordability, linewidth=0.9)
-        ax_a.axhline(1.0, linestyle="--", color="gray", linewidth=0.6)
-        ax_a.set_title("Affordability", fontsize=7)
-        ax_a.tick_params(labelsize=6)
-        ax_a.grid(True, linewidth=0.3)
-        st.pyplot(fig_a)
+    # Population plot
+    with col_pop:
+        fig_pop, ax_pop = plt.subplots(figsize=(2.4, 1.6))
+        fig_pop.patch.set_edgecolor("black")
+        fig_pop.patch.set_linewidth(1.5)
+        ax_pop.plot(t, population/1e6, linewidth=0.9)
+        ax_pop.set_title("Population", fontsize=9)
+        ax_pop.tick_params(labelsize=7)
+        ax_pop.grid(True, linewidth=0.3)
+        ax_pop.set_ylabel("Population (in millions)", fontsize=7)
+        st.pyplot(fig_pop)
+    
+    # Average real income plot
+    with col_income:
+        fig_inc, ax_inc = plt.subplots(figsize=(2.4, 1.6))
+        fig_inc.patch.set_edgecolor("black")
+        fig_inc.patch.set_linewidth(1.5)
+        ax_inc.plot(t, average_real_income/1e3, linewidth=0.9)
+        ax_inc.set_title("Average Real Income", fontsize=9)
+        ax_inc.tick_params(labelsize=7)
+        ax_inc.grid(True, linewidth=0.3)
+        ax_inc.set_ylabel("(Real) income (in thousand £)", fontsize=7)
+        st.pyplot(fig_inc)
+
+    # Self-sufficiency ratio plot
+    with col_ssr:
+        fig_ssr, ax_ssr = plt.subplots(figsize=(2.4, 1.6))
+        fig_ssr.patch.set_edgecolor("black")
+        fig_ssr.patch.set_linewidth(1.5)
+        ax_ssr.plot(t, self_sufficiency_ratio, linewidth=0.9)
+        ax_ssr.set_title("Self-Sufficiency Ratio", fontsize=9)
+        ax_ssr.tick_params(labelsize=7)
+        ax_ssr.grid(True, linewidth=0.3)
+        ax_ssr.set_ylabel("Self-Sufficiency Ratio (%)", fontsize=7)
+        st.pyplot(fig_ssr)
+
+    # Affordability index plot
+    with col_aff_ind:
+        fig_ai, ax_ai = plt.subplots(figsize=(2.4, 1.6))
+        fig_ai.patch.set_edgecolor("black")
+        fig_ai.patch.set_linewidth(1.5)
+        ax_ai.plot(t, affordability_index, linewidth=0.9)
+        ax_ai.set_title("Food affordability Index", fontsize=9)
+        ax_ai.tick_params(labelsize=7)
+        ax_ai.grid(True, linewidth=0.3)
+        ax_ai.set_ylabel("Affordability Index", fontsize=7)
+        st.pyplot(fig_ai)

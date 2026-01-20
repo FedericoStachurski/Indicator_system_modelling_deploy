@@ -78,6 +78,10 @@ class SimulationResult:
     land_fractions: np.ndarray       # (n_lands,)
     alphas: np.ndarray               # (n_lands,)
     P_max_vec: np.ndarray            # (n_lands,)
+    population: np.ndarray          # (n_times,)
+    self_sufficiency_ratio: np.ndarray  # (n_times,)
+    average_real_income: np.ndarray     # (n_times,)
+    affordability_index: np.ndarray     # (n_times,)
 
     # NEW: harvest, prices, affordability
     harvest_per_land: np.ndarray     # (n_lands, n_times)
@@ -104,18 +108,87 @@ def _soil_ode_single(
     D_t = D_fun(t, deg_params)
     return (alpha - D_t) * S * (1.0 - S)
 
+def _population_ODE(
+    P: float,
+    population_growth_rate: float,
+) -> float:
+    """
+    Population ODE
+    dP/dt = population_growth_rate * P
+    """
+    P_t = population_growth_rate * P
+    return P_t
+
+def _average_income_ODE(
+    I: float,
+    income_growth_rate: float,
+) -> float:
+    """
+    Average income ODE
+    dI/dt = income_growth_rate * I
+    """
+    I_t = income_growth_rate * I
+    return I_t
+
+def _inflation_index_ODE(
+    F: float,
+    inflation_rate: float,
+) -> float:
+    """
+    Inflation index ODE
+    dF/dt = inflation_rate * F
+    """
+    F_t = inflation_rate * F
+    return F_t
+
+def all_ODEs(
+    t: float,
+    y: np.ndarray,
+    population_growth_rate: float,
+    income_growth_rate: float,
+    inflation_rate: float,
+) -> np.ndarray:
+    """
+    Combined ODE system for all variables.
+    """
+    P = y[0]
+    I = y[1]
+    F = y[2]
+    dP_dt = _population_ODE(P, population_growth_rate)
+    dI_dt = _average_income_ODE(I, income_growth_rate)
+    dF_dt = _inflation_index_ODE(F, inflation_rate)  # example inflation rate
+    return np.array([dP_dt, dI_dt, dF_dt])
+
+def initial_conditions(
+    P0: float,
+    I0: float, 
+    F0: float, 
+) -> np.ndarray:
+    """
+    Initial conditions for all variables.
+    """
+    return np.array([P0, I0, F0])   
+
 
 def simulate_multi_land(
     lands: List[LandConfig],
     T_max: float,
     n_points: int = 500,
+    initial_population: float = 5_000_000,
+    initial_income: float = 30_000,
+    initial_inflation_index: float = 1.0,
+    population_growth_rate: float = 0.01,
+    income_growth_rate: float = 0.014,
+    inflation_rate: float = 0.017,
     # ---- NEW econ parameters with defaults ----
-    harvest_fraction: float = 1.0,
+    harvest_fraction: float = 1.0,        # fraction of production harvested
     price_demand_scale: float = 1.0,      # A in p = (A / Q)^(1/ε)
     price_demand_elasticity: float = 0.8, # ε > 0
     income: float = 1.0,                  # representative income
-    calories_per_unit: float = 1.0,       # calories per unit harvest
-    min_calories: float = 1.0,            # minimum calories per period
+    calories_per_unit: float = 1_100_000,       # kcal per tonne
+    min_calories: float = 1.0, 
+    calorie_per_person: float = 700_000,   # kcal per person per year
+    total_land_area: float = 560_000,    # total land area in hectares
 ) -> SimulationResult:
     """
     Simulate soil and production dynamics for multiple lands.
@@ -175,7 +248,23 @@ def simulate_multi_land(
     alphas_arr = np.array(alphas)
     P_max_arr = np.array(P_max_vec)
 
-    total_production = productions.sum(axis=0)
+    total_production = total_land_area *productions.sum(axis=0)
+
+    sol_all = solve_ivp(
+        all_ODEs,
+        t_span=(0.0, T_max),
+        y0=initial_conditions(initial_population, initial_income, initial_inflation_index),
+        t_eval=t_eval,
+        args=(population_growth_rate, income_growth_rate, inflation_rate),
+    )
+
+    population = sol_all.y[0]
+    average_income = sol_all.y[1]
+    inflation_index = sol_all.y[2]
+    average_real_income = average_income / inflation_index
+    calorie_demand = population * calorie_per_person
+    calorie_production = total_production * calories_per_unit
+    self_sufficiency_ratio = 100 * (calorie_production / calorie_demand)
 
     # Weighted soil (using land fractions) – guard against sum = 0
     if land_fractions_arr.sum() > 0:
@@ -214,7 +303,7 @@ def simulate_multi_land(
     C_min_eff = np.maximum(C_min, tiny)
 
     affordability = float(income) / C_min_eff
-
+    affordability_index = 0.01 * (self_sufficiency_ratio * average_real_income) / initial_income
     return SimulationResult(
         t=t_eval,
         soils=soils,
@@ -230,4 +319,8 @@ def simulate_multi_land(
         total_harvest=total_harvest,
         price=price,
         affordability=affordability,
+        population=population,
+        self_sufficiency_ratio=self_sufficiency_ratio,
+        average_real_income=average_real_income,
+        affordability_index=affordability_index,
     )
