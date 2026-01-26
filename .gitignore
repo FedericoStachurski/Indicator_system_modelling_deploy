@@ -1,3 +1,18 @@
 __pycache__/
 *.pyc
 .env
+# virtualenvs
+streamlitEnv/
+soil_env/
+.venv/
+venv/
+
+# python
+__pycache__/
+*.pyc
+
+# mac
+.DS_Store
+# Jupyter Notebook
+notebooks/*.ipynb
+**/.ipynb_checkpoints/
