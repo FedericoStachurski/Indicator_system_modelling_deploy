@@ -17,3 +17,4 @@ __pycache__/
 notebooks/*.ipynb
 **/.ipynb_checkpoints/
 .DS_Store
+fast_api/static/paper/*.pdf
