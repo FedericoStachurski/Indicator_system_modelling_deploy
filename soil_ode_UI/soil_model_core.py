@@ -44,6 +44,27 @@ SCENARIOS = {
     "Natural to synthetic": degradation_natural_synthetic,
 }
 
+# ------------------------------------------------------------
+# Recovery functions
+# ------------------------------------------------------------
+
+
+def alpha_constant(S: float, params: Dict) -> float:
+    return float(params["alpha_const"])
+
+def alpha_logistic(S: float, params: Dict) -> float:
+    alpha_max = float(params.get("alpha_max", 0.25))
+    rho = float(params.get("rho", 50.0))
+    S_T = float(params.get("S_T", 0.2))
+    z = np.clip(-rho * (S - S_T), -160, 160)
+    return alpha_max / (1.0 + np.exp(z))
+
+
+RECOVERY_MODES = {
+    "Constant alpha": alpha_constant,
+    "Logistic alpha(S)": alpha_logistic,
+}
+
 
 # ------------------------------------------------------------
 # Data structures
@@ -61,6 +82,9 @@ class LandConfig:
     deg_params: Dict          # parameters for D_i(t)
     land_fraction: float      # share of total land (0–1)
     P_max: float              # maximum yield scaling for this land
+    recovery_name: str = "Constant alpha"   # key into RECOVERY_MODES
+    recovery_params: Dict = None            # parameters for alpha(S)
+
 
 
 @dataclass
@@ -97,16 +121,16 @@ class SimulationResult:
 def _soil_ode_single(
     t: float,
     S: np.ndarray,
-    alpha: float,
     D_fun,
-    deg_params: Dict
+    deg_params: Dict,
+    alpha_fun,
+    recovery_params: Dict,
 ) -> float:
-    """
-    Single-land soil ODE:
-    dS/dt = (alpha - D(t)) * S * (1 - S)
-    """
+    S_val = float(S[0])
     D_t = D_fun(t, deg_params)
-    return (alpha - D_t) * S * (1.0 - S)
+    a = alpha_fun(S_val, recovery_params)
+    return (a - D_t) * S_val * (1.0 - S_val)
+
 
 def _population_ODE(
     P: float,
@@ -223,6 +247,20 @@ def simulate_multi_land(
 
         if land.scenario_name not in SCENARIOS:
             raise ValueError(f"Unknown scenario '{land.scenario_name}' for land {land.name}")
+        if land.recovery_name not in RECOVERY_MODES:
+            raise ValueError(f"Unknown recovery mode '{land.recovery_name}' for land {land.name}")
+        
+        alpha_fun = RECOVERY_MODES[land.recovery_name]
+
+        # If not provided, default based on mode
+        if land.recovery_name == "Logistic alpha(S)":
+            rp = dict(land.recovery_params or {})
+            rp.setdefault("alpha_max", 0.25)
+            rp.setdefault("rho", 50.0)
+            rp.setdefault("S_T", 0.2)
+        else:
+            # constant mode uses LandConfig.alpha
+            rp = {"alpha_const": land.alpha}
 
         D_fun = SCENARIOS[land.scenario_name]
 
@@ -232,8 +270,9 @@ def simulate_multi_land(
             t_span=(0.0, T_max),
             y0=[land.S0],
             t_eval=t_eval,
-            args=(land.alpha, D_fun, land.deg_params),
+            args=(D_fun, land.deg_params, alpha_fun, rp),
         )
+
 
         S_i = sol.y[0]
         soils[i, :] = S_i

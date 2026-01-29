@@ -1,0 +1,545 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Soil Health & Food Affordability</title>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+
+  <style>
+    html, body { height: 100%; margin: 0; overflow: hidden; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+
+    *, *::before, *::after { box-sizing: border-box; }
+
+    :root{
+      --base-font: 15px;
+      --small-font: 13px;
+    }
+
+    body{ font-size: var(--base-font); }
+
+    .app{
+      height: 100vh;
+      display: grid;
+      grid-template-rows: 44px 1fr;
+      background: linear-gradient(to top, #bdecb6 0%, #ffffff 70%);
+    }
+
+    .header{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 6px 10px;
+      border-bottom: 1px solid rgba(0,0,0,0.12);
+      background: rgba(255,255,255,0.7);
+      backdrop-filter: blur(6px);
+    }
+
+    .header .title{ font-weight: 700; font-size: 13px; }
+
+    .btn{
+      background: #222;
+      color: #fff;
+      border: 1px solid #000;
+      border-radius: 10px;
+      padding: 6px 10px;
+      cursor: pointer;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    /* plots area */
+    .plots{
+      height: 100%;
+      display: grid;
+      overflow-y: auto;     /* */
+      padding-bottom: 16px; /* optional: breathing room */
+      overscroll-behavior: contain;
+      scrollbar-gutter: stable;
+      grid-template-columns: repeat(3, 1fr);
+      grid-auto-rows: 340px;
+      align-content: start;
+      gap: 6px;
+      padding: 8px;
+    }
+
+    .card{
+      height: 100%;
+      border: 1px solid rgba(0,0,0,0.14);
+      border-radius: 10px;
+      background: rgba(255,255,255,0.65);
+      box-shadow: 0 1px 6px rgba(0,0,0,0.05);
+      padding: 2px;
+      min-width: 0;
+    }
+
+    .plot{ width:100%; height:100%; min-height:240px; min-width:0; }
+
+    /* modal overlay + panel */
+    .modal-overlay{
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.30);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 999;
+    }
+    .modal-overlay.open{ display: flex; }
+
+    .modal{
+      width: min(980px, 94vw);
+      max-height: 86vh;
+      overflow: auto;
+      background: rgba(255,255,255,0.10);  /* glassy panel */
+      backdrop-filter: blur(10px) saturate(120%);
+      -webkit-backdrop-filter: blur(10px) saturate(120%);
+      border: 1px solid rgba(0,0,0,0.18);
+      border-radius: 14px;
+      box-shadow: 0 10px 35px rgba(0,0,0,0.25);
+      padding: 12px;
+    }
+
+    .modal-header{
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+      gap: 10px;
+    }
+
+    .modal-title{ font-weight: 800; font-size: 14px; }
+
+    .grid-controls{
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .control{
+      border: 1px solid rgba(0,0,0,0.10);
+      border-radius: 12px;
+      padding: 10px;
+      background: rgba(255,255,255,0.75); /* keep controls solid */
+      display: grid;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .control h4{ margin: 0; font-size: 13px; }
+
+    .row{ display: grid; gap: 4px; min-width:0; }
+    .labelrow{ display: flex; justify-content: space-between; font-size: 12px; gap: 10px; }
+
+    input[type="range"]{ width: 100%; }
+    input[type="text"]{
+      width: 100%;
+      max-width: 100%;
+      padding: 6px 8px;
+      border-radius: 10px;
+      border: 1px solid rgba(0,0,0,0.18);
+      min-width: 0;
+    }
+
+    select{
+      width:100%;
+      padding:6px 8px;
+      border-radius:10px;
+      border:1px solid rgba(0,0,0,0.18);
+      background: rgba(255,255,255,0.95);
+    }
+
+    .small{ font-size: 12px; color: #333; }
+
+    @media (max-width: 980px){
+      .plots{ grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 650px){
+      .plots{ grid-template-columns: 1fr; grid-auto-rows: 320px; }
+      .grid-controls{ grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="app">
+    <div class="header">
+      <div class="title">Soil Health & Food Affordability — Dashboard</div>
+      <div style="display:flex; gap:8px;">
+        <button class="btn" id="openControls">Controls</button>
+        <button class="btn" onclick="window.open('/paper')">Paper</button>
+      </div>
+    </div>
+
+    <div class="plots">
+      <div class="card"><div id="plotSoil" class="plot"></div></div>
+      <div class="card"><div id="plotProd" class="plot"></div></div>
+      <div class="card"><div id="plotPop" class="plot"></div></div>
+      <div class="card"><div id="plotSSR" class="plot"></div></div>
+      <div class="card"><div id="plotInc" class="plot"></div></div>
+      <div class="card"><div id="plotAff" class="plot"></div></div>
+      <!-- <div class="card"><div id="plotDeg" class="plot"></div></div>
+      <div class="card"><div id="plotPrice" class="plot"></div></div>
+      <div class="card"><div id="plotHarvest" class="plot"></div></div>
+    </div> -->
+  </div>
+
+  <!-- Modal overlay -->
+  <div class="modal-overlay" id="overlay">
+    <div class="modal" id="modal">
+      <div class="modal-header">
+        <div class="modal-title">Simulation controls</div>
+        <button class="btn" id="closeControls">Close ✖</button>
+      </div>
+
+      <div class="grid-controls">
+        <!-- Global -->
+        <div class="control">
+          <h4>Global</h4>
+
+          <div class="row">
+            <div class="labelrow"><span><b>T_max</b></span><span id="tmaxLabel" class="small"></span></div>
+            <input id="tmax" type="range" min="10" max="250" step="10" value="50">
+          </div>
+
+          <div class="row">
+            <div class="labelrow"><span><b>Pop growth</b></span><span id="popLabel" class="small"></span></div>
+            <input id="pop" type="range" min="0" max="0.1" step="0.005" value="0.02">
+          </div>
+
+          <div class="row">
+            <div class="labelrow"><span><b>n_points</b></span><span id="nLabel" class="small"></span></div>
+            <input id="n" type="range" min="120" max="600" step="30" value="300">
+          </div>
+        </div>
+
+        <!-- Lands header + buttons (full width) -->
+        <div class="control" style="grid-column: 1 / -1;">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+            <h4 style="margin:0;">Lands</h4>
+            <div style="display:flex; gap:6px; flex-wrap:wrap;">
+              <button class="btn" id="addLandBtn" type="button">+ Add land</button>
+              <button class="btn" id="removeLandBtn" type="button">- Remove last</button>
+            </div>
+          </div>
+
+          <div id="landsContainer" class="grid-controls" style="grid-template-columns: 1fr 1fr; margin-top:8px;"></div>
+          <div class="small">Each land uses “Constant degradation D” for now (D_const per land).</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+const el = (id) => document.getElementById(id);
+
+// Modal open/close
+const overlay = el("overlay");
+el("openControls").addEventListener("click", () => overlay.classList.add("open"));
+el("closeControls").addEventListener("click", () => overlay.classList.remove("open"));
+overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.classList.remove("open"); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") overlay.classList.remove("open"); });
+
+// ------- Land state -------
+let landsState = [
+  {
+    name: "Land 1",
+    share: 50,
+    alpha: 0.20,
+    s0: 0.80,
+    pmax: 10.0,
+    dconst: 0.10,
+
+    recovery: "Constant alpha",
+    alpha_max: 0.25,
+    sT: 0.20,
+    rho: 50
+  },
+];
+
+function setLandLabels(i){
+  if (el(`shareLabel_${i}`)) el(`shareLabel_${i}`).textContent = `${landsState[i].share}%`;
+  if (el(`alphaLabel_${i}`)) el(`alphaLabel_${i}`).textContent = landsState[i].alpha.toFixed(2);
+  if (el(`s0Label_${i}`))    el(`s0Label_${i}`).textContent    = landsState[i].s0.toFixed(2);
+  if (el(`pmaxLabel_${i}`))  el(`pmaxLabel_${i}`).textContent  = landsState[i].pmax.toFixed(1);
+  if (el(`dLabel_${i}`))     el(`dLabel_${i}`).textContent     = landsState[i].dconst.toFixed(2);
+
+  if (el(`amaxLabel_${i}`))  el(`amaxLabel_${i}`).textContent  = landsState[i].alpha_max.toFixed(2);
+  if (el(`sTLabel_${i}`))    el(`sTLabel_${i}`).textContent    = landsState[i].sT.toFixed(2);
+  if (el(`rhoLabel_${i}`))   el(`rhoLabel_${i}`).textContent   = `${landsState[i].rho}`;
+}
+
+function renderLands() {
+  const container = el("landsContainer");
+  container.innerHTML = "";
+
+  landsState.forEach((land, i) => {
+    const card = document.createElement("div");
+    card.className = "control";
+    card.style.padding = "10px";
+
+    card.innerHTML = `
+      <h4>${land.name}</h4>
+
+      <div class="row">
+        <div class="labelrow"><span>Name</span><span class="small"></span></div>
+        <input id="landName_${i}" type="text" value="${land.name}" />
+      </div>
+
+      <div class="row">
+        <div class="labelrow"><span>Share (%)</span><span id="shareLabel_${i}" class="small"></span></div>
+        <input id="share_${i}" type="range" min="0" max="100" step="1" value="${land.share}">
+      </div>
+
+      <div class="row">
+        <div class="labelrow">
+          <span>Recovery model</span>
+          <span id="recLabel_${i}" class="small"></span>
+        </div>
+        <select id="recovery_${i}">
+          <option value="Constant alpha" ${land.recovery === "Constant alpha" ? "selected" : ""}>Constant α</option>
+          <option value="Logistic alpha(S)" ${land.recovery === "Logistic alpha(S)" ? "selected" : ""}>Logistic α(S)</option>
+        </select>
+      </div>
+
+      <div class="row" id="alphaConstRow_${i}">
+        <div class="labelrow"><span>α (constant)</span><span id="alphaLabel_${i}" class="small"></span></div>
+        <input id="alpha_${i}" type="range" min="0" max="1" step="0.01" value="${land.alpha}">
+      </div>
+
+      <div id="alphaLogisticBlock_${i}">
+        <div class="row">
+          <div class="labelrow"><span>αmax</span><span id="amaxLabel_${i}" class="small"></span></div>
+          <input id="amax_${i}" type="range" min="0" max="1" step="0.01" value="${land.alpha_max}">
+        </div>
+
+        <div class="row">
+          <div class="labelrow"><span>S_T</span><span id="sTLabel_${i}" class="small"></span></div>
+          <input id="sT_${i}" type="range" min="0" max="1" step="0.01" value="${land.sT}">
+        </div>
+
+        <div class="row">
+          <div class="labelrow"><span>ρ</span><span id="rhoLabel_${i}" class="small"></span></div>
+          <input id="rho_${i}" type="range" min="1" max="200" step="1" value="${land.rho}">
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="labelrow"><span>S₀</span><span id="s0Label_${i}" class="small"></span></div>
+        <input id="s0_${i}" type="range" min="0" max="1" step="0.01" value="${land.s0}">
+      </div>
+
+      <div class="row">
+        <div class="labelrow"><span>P_max</span><span id="pmaxLabel_${i}" class="small"></span></div>
+        <input id="pmax_${i}" type="range" min="0" max="40" step="0.5" value="${land.pmax}">
+      </div>
+
+      <div class="row">
+        <div class="labelrow"><span>D_const</span><span id="dLabel_${i}" class="small"></span></div>
+        <input id="d_${i}" type="range" min="0" max="1" step="0.01" value="${land.dconst}">
+      </div>
+    `;
+
+    container.appendChild(card);
+
+    const nameInp  = el(`landName_${i}`);
+    const shareInp = el(`share_${i}`);
+    const alphaInp = el(`alpha_${i}`);
+    const s0Inp    = el(`s0_${i}`);
+    const pmaxInp  = el(`pmax_${i}`);
+    const dInp     = el(`d_${i}`);
+
+    const recSel   = el(`recovery_${i}`);
+    const amaxInp  = el(`amax_${i}`);
+    const sTInp    = el(`sT_${i}`);
+    const rhoInp   = el(`rho_${i}`);
+
+    const alphaConstRow = el(`alphaConstRow_${i}`);
+    const alphaLogBlock = el(`alphaLogisticBlock_${i}`);
+
+    function applyRecoveryVisibility() {
+      const mode = (landsState[i].recovery || "");
+      const isLog = mode === "Logistic alpha(S)";
+      alphaConstRow.style.display = isLog ? "none" : "block";
+      alphaLogBlock.style.display = isLog ? "block" : "none";
+      el(`recLabel_${i}`).textContent = isLog ? "α(S)" : "α";
+    }
+
+    const updateFromUI = () => {
+      landsState[i].name   = nameInp.value || `Land ${i+1}`;
+      landsState[i].share  = +shareInp.value;
+
+      landsState[i].recovery = recSel.value;
+      applyRecoveryVisibility();
+
+      landsState[i].alpha  = +alphaInp.value;
+      landsState[i].alpha_max = +amaxInp.value;
+      landsState[i].sT        = +sTInp.value;
+      landsState[i].rho       = +rhoInp.value;
+
+      landsState[i].s0     = +s0Inp.value;
+      landsState[i].pmax   = +pmaxInp.value;
+      landsState[i].dconst = +dInp.value;
+
+      card.querySelector("h4").textContent = landsState[i].name;
+      setLandLabels(i);
+      triggerSim();
+    };
+
+    // sliders + text: input
+    [nameInp, shareInp, alphaInp, amaxInp, sTInp, rhoInp, s0Inp, pmaxInp, dInp]
+      .filter(Boolean)
+      .forEach(inp => inp.addEventListener("input", updateFromUI));
+
+    // IMPORTANT: select should use change
+    recSel.addEventListener("change", updateFromUI);
+
+    applyRecoveryVisibility();
+    setLandLabels(i);
+  });
+}
+
+// ------- Global labels -------
+function setGlobalLabels() {
+  el("tmaxLabel").textContent = el("tmax").value + " yrs";
+  el("popLabel").textContent  = (+el("pop").value).toFixed(3);
+  el("nLabel").textContent    = el("n").value;
+}
+
+// ------- Add/remove buttons -------
+el("addLandBtn").addEventListener("click", () => {
+  if (landsState.length >= 10) return;
+
+  landsState.push({
+    name: `Land ${landsState.length + 1}`,
+    share: Math.round(100 / (landsState.length + 1)),
+    alpha: 0.20,
+    s0: 0.80,
+    pmax: 10.0,
+    dconst: landsState[0]?.dconst ?? 0.10,
+    recovery: "Constant alpha",
+    alpha_max: 0.25,
+    sT: 0.20,
+    rho: 50
+  });
+
+  const each = Math.floor(100 / landsState.length);
+  const remainder = 100 - each * (landsState.length - 1);
+  landsState = landsState.map((l, idx) => ({...l, share: idx === landsState.length-1 ? remainder : each}));
+
+  renderLands();
+  triggerSim();
+});
+
+el("removeLandBtn").addEventListener("click", () => {
+  if (landsState.length <= 1) return;
+  landsState.pop();
+  renderLands();
+  triggerSim();
+});
+
+// ------- Simulation + plots -------
+const commonLayout = (title, ytitle) => ({
+  title: {text: title, font: {size: 15}},
+  margin: {l: 58, r: 6, t: 28, b: 20},
+  paper_bgcolor: "rgba(0,0,0,0)",
+  plot_bgcolor: "rgba(0,0,0,0)",
+  xaxis: {tickfont: {size: 11}},
+  yaxis: {title: {text: ytitle, font: {size: 13}}, tickfont: {size: 11}},
+  legend: {font: {size: 11}, orientation: "h", y: -0.25}
+});
+
+async function runSim() {
+  setGlobalLabels();
+
+  const sumShares = Math.max(landsState.reduce((a,l)=>a+l.share,0), 1e-9);
+
+  const payload = {
+    T_max: +el("tmax").value,
+    n_points: +el("n").value,
+    population_growth_rate: +el("pop").value,
+    lands: landsState.map((l) => ({
+      name: l.name,
+      alpha: l.alpha,
+      S0: l.s0,
+      scenario_name: "Constant degradation D",
+      deg_params: { "D_const": l.dconst },
+      land_fraction: l.share / sumShares,
+      P_max: l.pmax,
+      recovery_name: l.recovery,
+      recovery_params: (l.recovery === "Logistic alpha(S)")
+        ? { alpha_max: l.alpha_max, rho: l.rho, S_T: l.sT }
+        : {},
+    }))
+  };
+
+  const resp = await fetch("/api/simulate", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(payload)
+  });
+
+  const data = await resp.json();
+  const t = data.t;
+
+  // Soil traces
+  const soilTraces = [];
+  for (let i = 0; i < data.land_names.length; i++) {
+    soilTraces.push({ x:t, y:data.soils[i], type:"scatter", name:data.land_names[i], line:{width:3} });
+  }
+  soilTraces.push({ x:t, y:data.weighted_soil, type:"scatter", name:"Weighted", line:{width:3, dash:"dash"} });
+  Plotly.react("plotSoil", soilTraces, commonLayout("Soil", "Index"), {displayModeBar:false});
+
+  // Production traces
+  const prodTraces = [];
+  for (let i = 0; i < data.land_names.length; i++) {
+    prodTraces.push({ x:t, y:data.production_by_land[i], type:"scatter", name:data.land_names[i], line:{width:3}, showlegend:false });
+  }
+  prodTraces.push({ x:t, y:data.total_production, type:"scatter", name:"Total", line:{width:3, dash:"dash"}, showlegend:false });
+  Plotly.react("plotProd", prodTraces, {...commonLayout("Production","Tonnes"), showlegend:false}, {displayModeBar:false});
+
+  // Pop/SSR/Income/Afford
+  Plotly.react("plotPop", [{x:t, y:data.population, type:"scatter", name:"Population"}], commonLayout("Population","People"), {displayModeBar:false});
+  Plotly.react("plotSSR", [{x:t, y:data.self_sufficiency_ratio, type:"scatter", name:"SSR"}], commonLayout("Self-sufficiency","%"), {displayModeBar:false});
+  Plotly.react("plotInc", [{x:t, y:data.average_real_income, type:"scatter", name:"Real income"}], commonLayout("Real income","£ (real)"), {displayModeBar:false});
+  Plotly.react("plotAff", [{x:t, y:data.affordability_index, type:"scatter", name:"Affordability"}], commonLayout("Affordability","Index"), {displayModeBar:false});
+
+  // // Degradation
+  // if (data.degradations) {
+  //   const degTraces = [];
+  //   for (let i = 0; i < data.land_names.length; i++) {
+  //     degTraces.push({ x:t, y:data.degradations[i], type:"scatter", name:data.land_names[i], line:{width:3} });
+  //   }
+  //   Plotly.react("plotDeg", degTraces, commonLayout("Degradation D(t)","D"), {displayModeBar:false});
+  // }
+
+  // // Price
+  // if (data.price) {
+  //   Plotly.react("plotPrice", [{x:t, y:data.price, type:"scatter", name:"Price", line:{width:3}}], commonLayout("Price","p"), {displayModeBar:false});
+  // }
+
+  // // Harvest
+  // if (data.total_harvest) {
+  //   Plotly.react("plotHarvest", [{x:t, y:data.total_harvest, type:"scatter", name:"Harvest", line:{width:3}}], commonLayout("Total harvest","Tonnes"), {displayModeBar:false});
+  // }
+}
+
+// Debounce
+let timer = null;
+function triggerSim(){
+  clearTimeout(timer);
+  timer = setTimeout(runSim, 140);
+}
+
+// Global sliders -> sim
+["tmax","pop","n"].forEach((id) => el(id).addEventListener("input", triggerSim));
+
+// Init
+renderLands();
+runSim();
+</script>
+
+</body>
+</html>
