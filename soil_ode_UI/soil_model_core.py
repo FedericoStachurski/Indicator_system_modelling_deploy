@@ -7,14 +7,58 @@ No Streamlit or plotting here.
 """
 
 from dataclasses import dataclass
-from typing import Dict, List
+from typing import Dict, List, Optional
 import numpy as np
 from scipy.integrate import solve_ivp
 
+# ------------------------------------------------------------
+# Farming Modes
+# ------------------------------------------------------------
+
+def B_pulse_train(t: float, omega: int, tau: int = 1, phase: float = 0.0, eps: float = 1e-10) -> float:
+    """
+    Pulse train for farming mode (cash crops vs cover crops).
+
+    B(t) in {0,1}
+      - B(t) = 0 during cover-crop window of length tau at start of each cycle
+      - B(t) = 1 otherwise (cash crops)
+
+    Matches:
+      Bi(t)=0 if t in [k \omega, k \omega + \tau), else 1
+
+    Notes:
+      - omega and tau are in years
+      - tau must be < \omega
+      - phase shifts the cycle start (in years)
+    """
+    omega = int(omega)
+    tau = int(tau)
+    if omega <= 0:
+        return 1.0
+
+    if t < 0:
+        return 1.0  # pre-cycle, assume cash crops  
+    
+    cycle_time = (t - phase) % omega
+
+    if cycle_time < tau - eps:
+        return 0.0
+    else:
+        return 1.0
 
 # ------------------------------------------------------------
 # Degradation functions
 # ------------------------------------------------------------
+
+def g_fertiliser(F: float, zeta: float, D0: float) -> float:
+    """
+    g(F) = F^2 - 2*zeta*F + D0
+    """
+    F = float(F)
+    zeta = float(zeta)
+    D0 = float(D0)
+    return F*F - 2.0*zeta*F + D0
+
 
 def degradation_constant(t: float, params: Dict) -> float:
     return params["D_const"]
@@ -37,11 +81,28 @@ def degradation_natural_synthetic(t: float, params: Dict) -> float:
     y = beta * t
     return a0 * np.exp(-x) + a1 * (1 - np.exp(-y))
 
+def degradation_fertiliser_parabola(t: float, params: Dict) -> float:
+    """
+    Returns g(F) (time-constant). B(t) is applied outside (in the ODE).
+    params expects:
+      - F
+      - zeta
+      - D0
+    """
+    F = params.get("F", 1.0)
+    zeta = params.get("zeta", 1.0)
+    D0 = params.get("D0", 1.2)
+    return g_fertiliser(F, zeta, D0)
+
+
+
+
 
 SCENARIOS = {
     "Constant degradation D": degradation_constant,
     "Phase-out at T_int": degradation_phaseout,
     "Natural to synthetic": degradation_natural_synthetic,
+    "Fertiliser parabola": degradation_fertiliser_parabola,
 }
 
 # ------------------------------------------------------------
@@ -76,7 +137,7 @@ class LandConfig:
     Configuration for a single land / land owner.
     """
     name: str
-    alpha: float              # intrinsic recovery rate α_i
+    alpha: float              # intrinsic recovery rate alpha_i
     S0: float                 # initial soil health S_i(0)
     scenario_name: str        # key into SCENARIOS
     deg_params: Dict          # parameters for D_i(t)
@@ -85,6 +146,22 @@ class LandConfig:
     recovery_name: str = "Constant alpha"   # key into RECOVERY_MODES
     recovery_params: Dict = None            # parameters for alpha(S)
 
+    #Farming Mode parameters
+    omega: int = 1          # cycle length (years)
+    tau: int = 0            # cover-crop duration (years). tau=0 => always cash
+    phase: float = 0.0      # optional phase shift (years)
+
+    # Multipliers for cash vs cover
+    D_cash_scale: float = 1.0     # scale D(t) when B=1
+    D_cover_scale: float = 0.6    # scale D(t) when B=0 (less degradation)
+    alpha_cash_scale: float = 1.0 # scale alpha when B=1
+    alpha_cover_scale: float = 1.2# scale alpha when B=0 (more recovery)
+
+    prod_cash_scale: float = 1.0  # scale production when B=1
+    prod_cover_scale: float = 0.0 # typically 0 if cover/fallow
+
+    
+
 
 
 @dataclass
@@ -92,26 +169,27 @@ class SimulationResult:
     """
     Output container for a multi-land simulation.
     """
-    t: np.ndarray                    # (n_times,)
-    soils: np.ndarray                # (n_lands, n_times)
-    degradations: np.ndarray         # (n_lands, n_times)
-    productions: np.ndarray          # (n_lands, n_times)
-    total_production: np.ndarray     # (n_times,)
-    weighted_soil: np.ndarray        # (n_times,)
-    land_names: List[str]            # list of land names
-    land_fractions: np.ndarray       # (n_lands,)
-    alphas: np.ndarray               # (n_lands,)
-    P_max_vec: np.ndarray            # (n_lands,)
-    population: np.ndarray          # (n_times,)
+    t: np.ndarray                       # (n_times,)
+    soils: np.ndarray                   # (n_lands, n_times)
+    degradations: np.ndarray            # (n_lands, n_times)
+    productions: np.ndarray             # (n_lands, n_times)
+    total_production: np.ndarray        # (n_times,)
+    weighted_soil: np.ndarray           # (n_times,)
+    land_names: List[str]               # list of land names
+    land_fractions: np.ndarray          # (n_lands,)
+    alphas: np.ndarray                  # (n_lands,)
+    P_max_vec: np.ndarray               # (n_lands,)
+    population: np.ndarray              # (n_times,)
     self_sufficiency_ratio: np.ndarray  # (n_times,)
     average_real_income: np.ndarray     # (n_times,)
     affordability_index: np.ndarray     # (n_times,)
-
-    # NEW: harvest, prices, affordability
-    harvest_per_land: np.ndarray     # (n_lands, n_times)
-    total_harvest: np.ndarray        # (n_times,)
-    price: np.ndarray                # (n_times,)
-    affordability: np.ndarray        # (n_times,)
+    omega: int = 1                      # years per cycle
+    tau: int = 0                        # years of cover crop per cycle (tau=0 => always cultivated)
+    phase: float = 0.0                  # phase shift for farming mode (in years)
+    harvest_per_land: Optional[np.ndarray] = None
+    total_harvest: Optional[np.ndarray] = None
+    price: Optional[np.ndarray] = None
+    affordability: Optional[np.ndarray] = None
 
 
 # ------------------------------------------------------------
@@ -125,11 +203,27 @@ def _soil_ode_single(
     deg_params: Dict,
     alpha_fun,
     recovery_params: Dict,
+    omega: int,
+    tau: int,
+    phase: float,
 ) -> float:
     S_val = float(S[0])
-    D_t = D_fun(t, deg_params)
-    a = alpha_fun(S_val, recovery_params)
-    return (a - D_t) * S_val * (1.0 - S_val)
+
+    # Intrinsic recovery
+    a = float(alpha_fun(S_val, recovery_params))
+
+    # Baseline degradation from scenario (e.g. g(F))
+    D_base = float(D_fun(t, deg_params))
+
+    # Two-mode cultivation signal
+    B_t = B_pulse_train(t, omega=omega, tau=tau, phase=phase)
+    D_t = D_base * B_t
+    net = a - D_t
+    if abs(net) < 1e-12:
+        net = 0.0
+    # print(net * S_val * (1.0 - S_val), net, S_val, t)
+    return np.array([net * S_val * (1.0 - S_val)])
+
 
 
 def _population_ODE(
@@ -263,14 +357,18 @@ def simulate_multi_land(
             rp = {"alpha_const": land.alpha}
 
         D_fun = SCENARIOS[land.scenario_name]
-
+        min_window = max(0.1, land.omega / 10.0)  # min step for ODE solver based on farming cycle
         # Solve single-land soil ODE
         sol = solve_ivp(
             _soil_ode_single,
+            method = 'RK45',
             t_span=(0.0, T_max),
             y0=[land.S0],
             t_eval=t_eval,
-            args=(D_fun, land.deg_params, alpha_fun, rp),
+            max_step=min_window / 10.0,   # or /20
+            rtol=1e-8,
+            atol=1e-10,
+            args=(D_fun, land.deg_params, alpha_fun, rp, land.omega, land.tau, land.phase),
         )
 
 
@@ -278,10 +376,14 @@ def simulate_multi_land(
         soils[i, :] = S_i
 
         # Degradation time series for this land
-        degradations[i, :] = np.array([D_fun(tt, land.deg_params) for tt in t_eval])
+        B_series = np.array([B_pulse_train(tt, land.omega, land.tau, land.phase) for tt in t_eval])
+        D_base_series = np.array([D_fun(tt, land.deg_params) for tt in t_eval])
+        degradations[i, :] = D_base_series * B_series
+
 
         # Production: P_i(t) = P_max_i * S_i(t) * L_i
-        productions[i, :] = land.P_max * S_i * land.land_fraction
+        productions[i, :] = land.P_max * S_i * land.land_fraction * B_series
+
 
     land_fractions_arr = np.array(land_fractions)
     alphas_arr = np.array(alphas)
@@ -291,10 +393,14 @@ def simulate_multi_land(
 
     sol_all = solve_ivp(
         all_ODEs,
+        method = 'RK45',
         t_span=(0.0, T_max),
         y0=initial_conditions(initial_population, initial_income, initial_inflation_index),
         t_eval=t_eval,
         args=(population_growth_rate, income_growth_rate, inflation_rate),
+        # max_step=0.1,      # try 0.1 or 0.05 years
+        # rtol=1e-7,
+        # atol=1e-9,
     )
 
     population = sol_all.y[0]
