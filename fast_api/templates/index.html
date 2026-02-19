@@ -57,6 +57,16 @@
       cursor: pointer;
     }
 
+    input[type="text"].scenario-name{
+      width: 250px;
+      padding: 6px 8px;
+      border-radius: 10px;
+      border: 1px solid rgba(0,0,0,0.18);
+      background: rgba(255,255,255,0.95);
+      font-size: 12px;
+      min-width: 0;
+    }
+
     /* === MAIN GRID: left plots + right donut === */
     .main{
       height: calc(100vh - 44px);
@@ -224,7 +234,6 @@
       font-size: 12px;
     }
 
-
     /* Optional: make lands list scroll inside modal a bit nicer */
     #landsContainer{
       max-height: 55vh;
@@ -238,9 +247,17 @@
   <div class="app">
     <div class="header">
       <div class="title">Soil Health & Food Affordability — Dashboard</div>
-      <div style="display:flex; gap:8px; align-items:center;">
-        <button class="btn" id="openControls">Controls</button>
-        <button class="btn" onclick="window.open('/paper')">Paper</button>
+
+      <div style="display:flex; gap:10px; align-items:center; flex-wrap:nowrap; min-width:0;">
+        <button class="btn" id="newScenarioBtn" type="button">+ Scenario</button>
+
+        <input id="scenarioName"
+              class="scenario-name"
+              type="text"
+              value="Scenario 1"
+              title="Rename scenario" />
+
+        <select id="scenarioSelect" class="plot-select" title="Select scenario"></select>
 
         <select id="plotSelect" class="plot-select">
           <option value="none" selected>(show only Soil)</option>
@@ -253,6 +270,9 @@
           <option value="price">Price</option>
           <option value="harvest">Harvest</option>
         </select>
+
+        <button class="btn" id="openControls">Controls</button>
+        <button class="btn" onclick="window.open('/paper')">Paper</button>
       </div>
     </div>
 
@@ -274,7 +294,7 @@
         <div class="side-card">
           <div class="side-title">Indicator system</div>
           <div id="plotDonut" class="donut"></div>
-          <div class="side-note">Names only for now (values later).</div>
+          <div class="side-note">Signed % change vs BAU (time-average).</div>
         </div>
       </div>
     </div>
@@ -306,21 +326,42 @@
             <div class="labelrow"><span><b>n_points</b></span><span id="nLabel" class="small"></span></div>
             <input id="n" type="range" min="120" max="600" step="30" value="300">
           </div>
+
+          <!--Donut palette selector -->
+          <div class="row">
+            <div class="labelrow">
+              <span><b>Donut heatmap palette</b></span>
+              <span id="cmapLabel" class="small"></span>
+            </div>
+            <select id="donutCmap">
+              <option value="Jet" selected>Jet (classic)</option>
+              <option value="Hot">Hot</option>
+              <option value="Viridis">Viridis</option>
+              <option value="Cividis">Cividis</option>
+              <option value="YlGnBu">YlGnBu</option>
+              <option value="RdBu_r">RdBu (red→blue)</option>
+              <option value="RdBu">RdBu (blue→red)</option>
+              <option value="RedYellowGreen">Red→Yellow→Green</option>
+            </select>
+          </div>
         </div>
 
         <div class="control" style="grid-column: 1 / -1;">
           <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
-            <h4 style="margin:0;">Lands</h4>
+            <h4 style="margin:0;">Lands (Scenario only)</h4>
             <div style="display:flex; gap:6px; flex-wrap:wrap;">
               <button class="btn" id="addLandBtn" type="button">+ Add land</button>
               <button class="btn" id="removeLandBtn" type="button">- Remove last</button>
             </div>
           </div>
 
+          <div class="small" style="margin-top:6px;">
+            <b>Business as usual</b> is always included as a fixed baseline (not editable).
+          </div>
+
           <div id="landsContainer" class="grid-controls" style="grid-template-columns: 1fr 1fr; margin-top:8px;"></div>
           <div class="small">Degradation can be Constant D_const or Fertiliser parabola g(F)·B(t). B(t) is the cultivation pulse (cash crops vs cover).</div>
-          <div class="small">Total share: <span id="shareTotal">100%</span> (auto-normalised)</div>
-
+          <div class="small">Total share (scenario lands only): <span id="shareTotal">0%</span> (auto-normalised)</div>
         </div>
       </div>
     </div>
@@ -328,6 +369,7 @@
 
 <script>
 const el = (id) => document.getElementById(id);
+const deepClone = (obj) => (window.structuredClone ? structuredClone(obj) : JSON.parse(JSON.stringify(obj)));
 
 // Modal open/close
 const overlay = el("overlay");
@@ -336,14 +378,138 @@ el("closeControls").addEventListener("click", () => overlay.classList.remove("op
 overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.classList.remove("open"); });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") overlay.classList.remove("open"); });
 
-// ---- state ----
-let selectedPlot = "none";
+// ---------- Donut: signed % improvements ----------
+const EPS = 1e-9;
+const DONUT_CMIN = -50;   // -50%
+const DONUT_CMAX = +50;   // +50%
 
-let landsState = [{
-  name: "Land 1",
+// If your affordability index is "higher is better", keep +1. If lower is better, set -1.
+const SIGN = {
+  soil: +1,
+  prod: +1,
+  pop:  +1,
+  ssr:  +1,
+  inc:  +1,
+  aff:  +1,
+  deg:  -1,
+  price:-1,
+  harvest:+1
+};
+
+function mean(arr){
+  let s = 0;
+  for (let i=0; i<arr.length; i++) s += arr[i];
+  return s / Math.max(arr.length, 1);
+}
+
+function signedPctImprovement(seriesScenario, seriesBAU, sign=+1){
+  const ms = mean(seriesScenario);
+  const mb = mean(seriesBAU);
+  const pct = 100 * (ms - mb) / (Math.abs(mb) + EPS);
+  return sign * pct;
+}
+
+function clamp(x, a, b){ return Math.max(a, Math.min(b, x)); }
+
+// Approx JET stops (stable)
+const JET_STOPS = [
+  [0.00, [0,   0, 131]],
+  [0.125,[0,  60, 170]],
+  [0.375,[5, 255, 255]],
+  [0.625,[255,255,   0]],
+  [0.875,[250,  0,   0]],
+  [1.00, [128,  0,   0]],
+];
+
+
+
+// Palette library (Plotly colorscale arrays)
+const COLOR_SCALES = {
+  Jet: JET_STOPS.map(([t, c]) => [t, `rgb(${c[0]},${c[1]},${c[2]})`]),
+
+  Hot: [
+    [0.00, "#000000"],
+    [0.33, "#ff0000"],
+    [0.66, "#ffff00"],
+    [1.00, "#ffffff"]
+  ],
+
+  Viridis: [
+    [0.00,"#440154"], [0.25,"#3b528b"], [0.50,"#21918c"], [0.75,"#5ec962"], [1.00,"#fde725"]
+  ],
+  Cividis: [
+    [0.00,"#00204c"], [0.25,"#2c3f6f"], [0.50,"#576a78"], [0.75,"#a5a86a"], [1.00,"#fee838"]
+  ],
+  YlGnBu: [
+    [0.00,"#ffffd9"], [0.25,"#a1dab4"], [0.50,"#41b6c4"], [0.75,"#2c7fb8"], [1.00,"#253494"]
+  ],
+  RdBu_r: [ // low=red, high=blue
+    [0.00,"#b2182b"], [0.50,"#f7f7f7"], [1.00,"#2166ac"]
+  ],
+  RdBu: [ // low=blue, high=red
+    [0.00,"#2166ac"], [0.50,"#f7f7f7"], [1.00,"#b2182b"]
+  ],
+  RedYellowGreen: [
+    [0.00,"#8b0000"], [0.50,"#ffd700"], [1.00,"#006400"]
+  ]
+};
+
+function hexToRgb(hex){
+  const h = hex.replace("#","").trim();
+  const full = (h.length === 3) ? h.split("").map(ch => ch+ch).join("") : h;
+  const n = parseInt(full, 16);
+  return [ (n>>16)&255, (n>>8)&255, n&255 ];
+}
+
+function parseColor(c){
+  if (c.startsWith("rgb(")) {
+    const m = c.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/i);
+    if (!m) return [0,0,0];
+    return [ +m[1], +m[2], +m[3] ];
+  }
+  if (c.startsWith("#")) return hexToRgb(c);
+  return [0,0,0];
+}
+
+function lerp(a,b,t){ return a + (b-a)*t; }
+
+function sampleColorscale(colorscale, t){
+  t = clamp(t, 0, 1);
+  for (let i=1; i<colorscale.length; i++){
+    const [t1, c1] = colorscale[i-1];
+    const [t2, c2] = colorscale[i];
+    if (t <= t2){
+      const u = (t - t1) / Math.max((t2 - t1), 1e-12);
+      const A = parseColor(c1);
+      const B = parseColor(c2);
+      const r = Math.round(lerp(A[0], B[0], u));
+      const g = Math.round(lerp(A[1], B[1], u));
+      const b = Math.round(lerp(A[2], B[2], u));
+      return `rgb(${r},${g},${b})`;
+    }
+  }
+  const last = parseColor(colorscale[colorscale.length-1][1]);
+  return `rgb(${last[0]},${last[1]},${last[2]})`;
+}
+
+function valueToColor(v, colorscale){
+  const vv = clamp(v, DONUT_CMIN, DONUT_CMAX);
+  const t = (vv - DONUT_CMIN) / (DONUT_CMAX - DONUT_CMIN);
+  return sampleColorscale(colorscale, t);
+}
+
+function fmtPct(v){
+  if (!isFinite(v)) return "0.0%";
+  return (v>=0?"+":"") + v.toFixed(1) + "%";
+}
+
+/* =========================
+   BAU BASELINE (FIXED)
+========================= */
+const BAU_LAND = {
+  name: "Business as usual",
   share: 100,
 
-  // recovery
   alpha: 0.20,
   s0: 0.80,
   recovery: "Constant alpha",
@@ -351,28 +517,131 @@ let landsState = [{
   sT: 0.20,
   rho: 50,
 
-  // production
   pmax: 10.0,
 
-  // degradation/scenario
-  scenario_name: "Fertiliser parabola", // or "Constant degradation D"
+  scenario_name: "Fertiliser parabola",
   dconst: 0.10,
 
-  // fertiliser parabola params
   F: 1.0,
   zeta: 1.0,
   D0: 1.2,
 
-  // management pulse train B(t)
   omega: 3,
   tau: 1,
   phase: 0.0,
-}];
+};
 
+function defaultEditableLand(n){
+  const base = deepClone(BAU_LAND);
+  base.name = `Land ${n}`;
+  base.share = 100;
+  return base;
+}
+
+/* =========================
+   SCENARIOS
+========================= */
+function defaultScenarioState(index){
+  return {
+    name: `Scenario ${index+1}`,
+    globals: { tmax: 50, pop: 0.02, n: 300, selectedPlot: "none", donutCmap: "Jet" },
+    lands: [] // scenario lands only
+  };
+}
+
+let scenarios = [ defaultScenarioState(0) ];
+let activeScenario = 0;
+
+// app state
+let selectedPlot = "none";
+let landsState = deepClone(scenarios[0].lands);
+
+function refreshScenarioSelect(){
+  const sel = el("scenarioSelect");
+  sel.innerHTML = "";
+  scenarios.forEach((sc, i) => {
+    const opt = document.createElement("option");
+    opt.value = String(i);
+    opt.textContent = sc.name || `Scenario ${i+1}`;
+    sel.appendChild(opt);
+  });
+  sel.value = String(activeScenario);
+}
+
+function pullUIIntoActiveScenario(){
+  const sc = scenarios[activeScenario];
+
+  sc.name = el("scenarioName").value || sc.name;
+
+  sc.globals.tmax = +el("tmax").value;
+  sc.globals.pop  = +el("pop").value;
+  sc.globals.n    = +el("n").value;
+  sc.globals.selectedPlot = selectedPlot;
+
+  // ✅ NEW: store palette per-scenario
+  sc.globals.donutCmap = el("donutCmap").value || "Jet";
+
+  sc.lands = deepClone(landsState);
+}
+
+function pushScenarioToUI(idx){
+  const sc = scenarios[idx];
+  activeScenario = idx;
+
+  el("tmax").value = sc.globals.tmax;
+  el("pop").value  = sc.globals.pop;
+  el("n").value    = sc.globals.n;
+
+  selectedPlot = sc.globals.selectedPlot || "none";
+  el("plotSelect").value = selectedPlot;
+
+  el("scenarioName").value = sc.name;
+
+  //restore palette per scenario
+  el("donutCmap").value = sc.globals.donutCmap || "Jet";
+  el("cmapLabel").textContent = el("donutCmap").value;
+
+  landsState = deepClone(sc.lands);
+
+  renderLands();
+  updateShareTotal();
+  setGlobalLabels();
+  runSim();
+}
+
+// Scenario UI events
+el("scenarioSelect").addEventListener("change", (e) => {
+  const idx = +e.target.value;
+  pullUIIntoActiveScenario();
+  pushScenarioToUI(idx);
+  refreshScenarioSelect();
+});
+
+el("scenarioName").addEventListener("input", () => {
+  scenarios[activeScenario].name = el("scenarioName").value || scenarios[activeScenario].name;
+  refreshScenarioSelect();
+});
+
+el("newScenarioBtn").addEventListener("click", () => {
+  pullUIIntoActiveScenario();
+
+  const newIdx = scenarios.length;
+  scenarios.push(defaultScenarioState(newIdx));
+
+  refreshScenarioSelect();
+  pushScenarioToUI(newIdx);
+});
+
+/* =========================
+   EXISTING APP LOGIC
+========================= */
 function setGlobalLabels(){
   el("tmaxLabel").textContent = el("tmax").value + " yrs";
   el("popLabel").textContent  = (+el("pop").value).toFixed(3);
   el("nLabel").textContent    = el("n").value;
+
+  //palette label
+  el("cmapLabel").textContent = el("donutCmap").value;
 }
 
 function updateShareTotal(){
@@ -381,7 +650,6 @@ function updateShareTotal(){
   const elTot = el("shareTotal");
   if (elTot) elTot.textContent = pct;
 }
-
 
 function setLandLabels(i){
   if (el(`shareLabel_${i}`)) el(`shareLabel_${i}`).textContent = `${landsState[i].share}%`;
@@ -408,6 +676,19 @@ function setLandLabels(i){
 function renderLands(){
   const container = el("landsContainer");
   container.innerHTML = "";
+
+  if (landsState.length === 0){
+    const msg = document.createElement("div");
+    msg.className = "control";
+    msg.style.gridColumn = "1 / -1";
+    msg.innerHTML = `
+      <h4>No scenario lands yet</h4>
+      <div class="small">Click <b>+ Add land</b> to add an intervention land. BAU baseline will remain in the plots.</div>
+    `;
+    container.appendChild(msg);
+    refreshScenarioSelect();
+    return;
+  }
 
   landsState.forEach((land, i) => {
     const card = document.createElement("div");
@@ -529,7 +810,6 @@ function renderLands(){
     const sTInp    = el(`sT_${i}`);
     const rhoInp   = el(`rho_${i}`);
 
-    // New degradation + management inputs
     const scenSel   = el(`scenario_${i}`);
     const fertBlock = el(`fertBlock_${i}`);
     const dConstRow = el(`dConstRow_${i}`);
@@ -557,7 +837,6 @@ function renderLands(){
       fertBlock.style.display = isFert ? "block" : "none";
       dConstRow.style.display = isFert ? "none" : "block";
 
-      // Keep tau max tied to omega (UI guard)
       tauInp.max = String(landsState[i].omega);
       if (landsState[i].tau > landsState[i].omega) {
         landsState[i].tau = landsState[i].omega;
@@ -573,7 +852,6 @@ function renderLands(){
 
       landsState[i].recovery = recSel.value;
       applyRecoveryVisibility();
-      
 
       landsState[i].alpha = +alphaInp.value;
       landsState[i].alpha_max = +amaxInp.value;
@@ -583,7 +861,6 @@ function renderLands(){
       landsState[i].s0 = +s0Inp.value;
       landsState[i].pmax = +pmaxInp.value;
 
-      // degradation model + params
       landsState[i].scenario_name = scenSel.value;
       landsState[i].dconst = +dInp.value;
 
@@ -591,7 +868,6 @@ function renderLands(){
       landsState[i].zeta = +zetaInp.value;
       landsState[i].D0 = +D0Inp.value;
 
-      // management B(t)
       landsState[i].omega = +omegaInp.value;
       landsState[i].tau = +tauInp.value;
       landsState[i].phase = +phaseInp.value;
@@ -606,12 +882,10 @@ function renderLands(){
       triggerSim();
     };
 
-    // Existing listeners
     [nameInp, shareInp, alphaInp, amaxInp, sTInp, rhoInp, s0Inp, pmaxInp, dInp]
       .forEach(inp => inp.addEventListener("input", updateFromUI));
     recSel.addEventListener("change", updateFromUI);
 
-    // New listeners
     [scenSel, FInp, zetaInp, D0Inp, omegaInp, tauInp, phaseInp]
       .forEach(inp => inp.addEventListener("input", updateFromUI));
     scenSel.addEventListener("change", updateFromUI);
@@ -620,42 +894,22 @@ function renderLands(){
     applyScenarioVisibility();
     setLandLabels(i);
   });
+
+  refreshScenarioSelect();
 }
 
-// Add/remove land
+// Add/remove land (scenario lands only)
 el("addLandBtn").addEventListener("click", () => {
   if (landsState.length >= 10) return;
-  landsState.push({
-    name: `Land ${landsState.length + 1}`,
-    share: Math.round(100 / (landsState.length + 1)),
-
-    alpha: 0.25,
-    s0: 0.80,
-    recovery: "Constant alpha",
-    alpha_max: 0.25,
-    sT: 0.20,
-    rho: 50,
-
-    pmax: 10.0,
-
-    scenario_name: landsState[0]?.scenario_name ?? "Fertiliser parabola",
-    dconst: landsState[0]?.dconst ?? 0.10,
-
-    F: landsState[0]?.F ?? 1.0,
-    zeta: landsState[0]?.zeta ?? 1.0,
-    D0: landsState[0]?.D0 ?? 1.2,
-
-    omega: landsState[0]?.omega ?? 3,
-    tau: landsState[0]?.tau ?? 1,
-    phase: landsState[0]?.phase ?? 0.0,
-  });
+  const n = landsState.length + 1;
+  landsState.push(defaultEditableLand(n));
   renderLands();
   updateShareTotal();
   triggerSim();
 });
 
 el("removeLandBtn").addEventListener("click", () => {
-  if (landsState.length <= 1) return;
+  if (landsState.length <= 0) return;
   landsState.pop();
   renderLands();
   updateShareTotal();
@@ -686,13 +940,13 @@ const commonLayout = (title, ytitle) => ({
   },
 
   legend: {
-    font: { size: 12 },
+    font: { size: 18 },
     orientation: "h",
     y: -0.35
   }
 });
 
-function renderDonut(){
+function renderDonutWithHeat(values){
   const labels = [
     "Soil health",
     "Production",
@@ -704,28 +958,65 @@ function renderDonut(){
     "Price",
     "Harvest"
   ];
-  const values = labels.map(() => 1);
 
-  const trace = [{
+  //pick palette from current scenario
+  const cmapName = scenarios[activeScenario]?.globals?.donutCmap || "Jet";
+  const cmap = COLOR_SCALES[cmapName] || COLOR_SCALES.Jet;
+
+  const colors = values.map(v => valueToColor(v, cmap));
+
+  const pie = {
     type: "pie",
     labels,
-    values,
-    hole: 0.62,
-    textinfo: "label",
+    values: labels.map(() => 1),
+    hole: 0.52,
+    text: values.map(v => `<b>${fmtPct(v)}</b>`),
+    textinfo: "label+text",
+    texttemplate: "<b>%{label}</b><br>%{text}",
     textposition: "outside",
+    fontsize: 46,
     automargin: true,
-    marker: { line: { color: "black", width: 4 } }
-  }];
+    marker: { colors, line: { color: "black", width: 4 } },
+    hovertemplate: "%{label}<br>%{text} vs BAU<extra></extra>",
+    showlegend: false,
+    sort: false,
+    direction: "clockwise",
+  };
 
-  const layout = {
-    title: { text: "", font: { size: 14 } },
-    margin: { l: 10, r: 10, t: 10, b: 10 },
-    paper_bgcolor: "rgba(0,0,0,0)",
-    plot_bgcolor: "rgba(0,0,0,0)",
+  const colorbarTrace = {
+    type: "scatter",
+    x: [0, 0],
+    y: [0, 0],
+    mode: "markers",
+    marker: {
+      size: 0.1,
+      color: [DONUT_CMIN, DONUT_CMAX],
+      cmin: DONUT_CMIN,
+      cmax: DONUT_CMAX,
+      colorscale: cmap,     
+      showscale: true,
+      colorbar: {
+        orientation: "h",
+        title: { text: "% \u03b4 vs BAU", side: "bottom" },
+        thickness: 14,
+        len: 0.85,
+        y: -.1
+      }
+    },
+    opacity: 0,
+    hoverinfo: "skip",
     showlegend: false
   };
 
-  Plotly.react("plotDonut", trace, layout, { displayModeBar:false, responsive:true });
+  const layout = {
+    margin: { l: 10, r: 40, t: 10, b: 10 },
+    paper_bgcolor: "rgba(0,0,0,0)",
+    plot_bgcolor: "rgba(0,0,0,0)",
+    xaxis: { visible: false, showgrid: false, zeroline: false },
+    yaxis: { visible: false, showgrid: false, zeroline: false },
+  };
+
+  Plotly.react("plotDonut", [pie, colorbarTrace], layout, { displayModeBar:false, responsive:true });
 }
 
 function showSecondary(show){
@@ -743,17 +1034,22 @@ function showSecondary(show){
   setTimeout(() => Plotly.Plots.resize("plotSoil"), 0);
 }
 
-async function runSim(){
-  setGlobalLabels();
+async function fetchSim(payload){
+  const resp = await fetch("/api/simulate", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify(payload)
+  });
+  return await resp.json();
+}
 
-  const sumShares = Math.max(landsState.reduce((a,l)=>a+l.share,0), 1e-9);
-
-  const payload = {
+function buildPayloadFromLands(lands){
+  const sumShares = Math.max(lands.reduce((a,l)=>a + (+l.share||0), 0), 1e-9);
+  return {
     T_max: +el("tmax").value,
     n_points: +el("n").value,
     population_growth_rate: +el("pop").value,
-
-    lands: landsState.map(l => {
+    lands: lands.map(l => {
       const scenario_name = l.scenario_name || "Fertiliser parabola";
       const deg_params = (scenario_name === "Fertiliser parabola")
         ? { F: l.F, zeta: l.zeta, D0: l.D0 }
@@ -765,7 +1061,7 @@ async function runSim(){
         S0: l.s0,
         scenario_name,
         deg_params,
-        land_fraction: l.share / sumShares,
+        land_fraction: (+l.share || 0) / sumShares,
         P_max: l.pmax,
 
         recovery_name: l.recovery,
@@ -773,42 +1069,96 @@ async function runSim(){
           ? { alpha_max: l.alpha_max, rho: l.rho, S_T: l.sT }
           : {},
 
-        // NEW: B(t)
         omega: l.omega,
         tau: l.tau,
         phase: l.phase,
       };
     })
   };
+}
 
-  const resp = await fetch("/api/simulate", {
-    method: "POST",
-    headers: {"Content-Type":"application/json"},
-    body: JSON.stringify(payload)
+async function runSim(){
+  pullUIIntoActiveScenario();
+  refreshScenarioSelect();
+  setGlobalLabels();
+
+  // Always run BAU
+  const bauPayload = buildPayloadFromLands([{...BAU_LAND, share: 1}]);
+
+  // Scenario exists only if user added scenario lands
+  const hasScenarioLands = landsState.length > 0;
+  const scenarioPayload = hasScenarioLands ? buildPayloadFromLands(landsState) : null;
+
+  const [bauData, scenarioData] = await Promise.all([
+    fetchSim(bauPayload),
+    hasScenarioLands ? fetchSim(scenarioPayload) : Promise.resolve(null)
+  ]);
+
+  const t = bauData.t;
+  const hasScenarioData = !!scenarioData;
+
+  function scenarioWeights(){
+    if (!hasScenarioData || landsState.length === 0) return [];
+    const sum = landsState.reduce((a,l)=>a+(+l.share||0), 0) || 1;
+    return landsState.map(l => (+l.share||0)/sum);
+  }
+
+  function weightedSeries(seriesList, w){
+    if (!seriesList || seriesList.length === 0) return null;
+    const n = seriesList[0].length;
+    const out = new Array(n).fill(0);
+    for (let i=0; i<seriesList.length; i++){
+      const wi = w[i] ?? (1/seriesList.length);
+      const si = seriesList[i];
+      for (let k=0; k<n; k++) out[k] += wi * si[k];
+    }
+    return out;
+  }
+
+  // BAU series
+  const bau_soil = bauData.soils[0];
+  const bau_deg  = bauData.degradations[0];
+
+  // Scenario series (if exists)
+  const w = scenarioWeights();
+  const sc_soil = hasScenarioData ? weightedSeries(scenarioData.soils, w) : bau_soil;
+  const sc_deg  = hasScenarioData ? weightedSeries(scenarioData.degradations, w) : bau_deg;
+
+  const sc_prod  = hasScenarioData ? scenarioData.total_production : bauData.total_production;
+  const sc_pop   = hasScenarioData ? scenarioData.population : bauData.population;
+  const sc_ssr   = hasScenarioData ? scenarioData.self_sufficiency_ratio : bauData.self_sufficiency_ratio;
+  const sc_inc   = hasScenarioData ? scenarioData.average_real_income : bauData.average_real_income;
+  const sc_aff   = hasScenarioData ? scenarioData.affordability_index : bauData.affordability_index;
+  const sc_price = hasScenarioData ? scenarioData.price : bauData.price;
+  const sc_harv  = hasScenarioData ? scenarioData.total_harvest : bauData.total_harvest;
+
+  const donutValues = [
+    signedPctImprovement(sc_soil,  bau_soil,  SIGN.soil),
+    signedPctImprovement(sc_prod,  bauData.total_production, SIGN.prod),
+    signedPctImprovement(sc_pop,   bauData.population, SIGN.pop),
+    signedPctImprovement(sc_ssr,   bauData.self_sufficiency_ratio, SIGN.ssr),
+    signedPctImprovement(sc_inc,   bauData.average_real_income, SIGN.inc),
+    signedPctImprovement(sc_aff,   bauData.affordability_index, SIGN.aff),
+    signedPctImprovement(sc_deg,   bau_deg,   SIGN.deg),
+    signedPctImprovement(sc_price, bauData.price, SIGN.price),
+    signedPctImprovement(sc_harv,  bauData.total_harvest, SIGN.harvest),
+  ].map(v => clamp(v, DONUT_CMIN, DONUT_CMAX));
+
+  renderDonutWithHeat(donutValues);
+
+  // Soil plot: BAU + scenario lands
+  const soilTraces = [];
+  soilTraces.push({
+    x: t, y: bauData.soils[0],
+    type: "scatter", name: "BAU (Business as usual)",
+    line: { width: 6, dash: "dash" }
   });
 
-  const data = await resp.json();
-  const t = data.t;
-
-//   const alphaMinusD = data.degradations.map((Dseries, i) =>
-//   Dseries.map(Dt => data.alphas[i] - Dt)
-// );
-
-// console.log("alpha - D(t):", alphaMinusD);
-  
-//   console.log("t array:", t);
-//   console.log("soil data:", data.soils); 
-//   console.log("alpha data:", data.alphas);
-//   console.log("degradation data:", data.degradations);
-//   console.log("alpha - degradation:", alphaMinusD);
-
-  // Soil always on the left
-  const soilTraces = [];
-  for (let i=0; i<data.land_names.length; i++){
-    
-    soilTraces.push({x:t, y:data.soils[i], type:"scatter", name:data.land_names[i], line:{width:6}});
+  if (hasScenarioData){
+    for (let i=0; i<scenarioData.land_names.length; i++){
+      soilTraces.push({x:t, y:scenarioData.soils[i], type:"scatter", name:scenarioData.land_names[i], line:{width:6}});
+    }
   }
-  // soilTraces.push({x:t, y:data.weighted_soil, type:"scatter", name:"Weighted", line:{width:3, dash:"dash"}});
   Plotly.react("plotSoil", soilTraces, commonLayout("Soil", "Index"), {displayModeBar:false, responsive:true});
 
   // Secondary plot depends on dropdown
@@ -817,65 +1167,57 @@ async function runSim(){
     Plotly.purge("plotMain");
     return;
   }
-
   showSecondary(true);
 
   if (selectedPlot === "prod"){
-    const prodTraces = [];
-    for (let i=0; i<data.land_names.length; i++){
-      prodTraces.push({x:t, y:data.production_by_land[i], type:"scatter", name:data.land_names[i], line:{width:3}});
+    const traces = [];
+    traces.push({x:t, y: bauData.total_production, type:"scatter", name:"BAU Total", line:{width:3, dash:"dash"}});
+    if (hasScenarioData){
+      for (let i=0; i<scenarioData.land_names.length; i++){
+        traces.push({x:t, y:scenarioData.production_by_land[i], type:"scatter", name:scenarioData.land_names[i], line:{width:3}});
+      }
+      traces.push({x:t, y:scenarioData.total_production, type:"scatter", name:"Scenario Total", line:{width:3, dash:"dot"}});
     }
-    prodTraces.push({x:t, y:data.total_production, type:"scatter", name:"Total", line:{width:3, dash:"dash"}});
-    Plotly.react("plotMain", prodTraces, commonLayout("Production", "Tonnes"), {displayModeBar:false, responsive:true});
+    Plotly.react("plotMain", traces, commonLayout("Production", "Tonnes"), {displayModeBar:false, responsive:true});
   }
   else if (selectedPlot === "pop"){
-    Plotly.react("plotMain",
-      [{x:t, y:data.population, type:"scatter", name:"Population", line:{width:3}}],
-      commonLayout("Population","People"),
-      {displayModeBar:false, responsive:true}
-    );
+    const traces = [{x:t, y: bauData.population, type:"scatter", name:"BAU", line:{width:3, dash:"dash"}}];
+    if (hasScenarioData) traces.push({x:t, y: scenarioData.population, type:"scatter", name:"Scenario", line:{width:3}});
+    Plotly.react("plotMain", traces, commonLayout("Population","People"), {displayModeBar:false, responsive:true});
   }
   else if (selectedPlot === "ssr"){
-    Plotly.react("plotMain",
-      [{x:t, y:data.self_sufficiency_ratio, type:"scatter", name:"SSR", line:{width:3}}],
-      commonLayout("Self-sufficiency","%"),
-      {displayModeBar:false, responsive:true}
-    );
+    const traces = [{x:t, y: bauData.self_sufficiency_ratio, type:"scatter", name:"BAU", line:{width:3, dash:"dash"}}];
+    if (hasScenarioData) traces.push({x:t, y: scenarioData.self_sufficiency_ratio, type:"scatter", name:"Scenario", line:{width:3}});
+    Plotly.react("plotMain", traces, commonLayout("Self-sufficiency","%"), {displayModeBar:false, responsive:true});
   }
   else if (selectedPlot === "inc"){
-    Plotly.react("plotMain",
-      [{x:t, y:data.average_real_income, type:"scatter", name:"Real income", line:{width:3}}],
-      commonLayout("Real income","£ (real)"),
-      {displayModeBar:false, responsive:true}
-    );
+    const traces = [{x:t, y: bauData.average_real_income, type:"scatter", name:"BAU", line:{width:3, dash:"dash"}}];
+    if (hasScenarioData) traces.push({x:t, y: scenarioData.average_real_income, type:"scatter", name:"Scenario", line:{width:3}});
+    Plotly.react("plotMain", traces, commonLayout("Real income","£ (real)"), {displayModeBar:false, responsive:true});
   }
   else if (selectedPlot === "aff"){
-    Plotly.react("plotMain",
-      [{x:t, y:data.affordability_index, type:"scatter", name:"Affordability", line:{width:3}}],
-      commonLayout("Affordability","Index"),
-      {displayModeBar:false, responsive:true}
-    );
+    const traces = [{x:t, y: bauData.affordability_index, type:"scatter", name:"BAU", line:{width:3, dash:"dash"}}];
+    if (hasScenarioData) traces.push({x:t, y: scenarioData.affordability_index, type:"scatter", name:"Scenario", line:{width:3}});
+    Plotly.react("plotMain", traces, commonLayout("Affordability","Index"), {displayModeBar:false, responsive:true});
   }
   else if (selectedPlot === "deg"){
-    const degTraces = [];
-    for (let i=0; i<data.land_names.length; i++){
-      degTraces.push({x:t, y:data.degradations[i], type:"scatter", name:data.land_names[i], line:{width:3}});
+    const traces = [{x:t, y: bauData.degradations[0], type:"scatter", name:"BAU", line:{width:3, dash:"dash"}}];
+    if (hasScenarioData){
+      for (let i=0; i<scenarioData.land_names.length; i++){
+        traces.push({x:t, y: scenarioData.degradations[i], type:"scatter", name:scenarioData.land_names[i], line:{width:3}});
+      }
     }
-    Plotly.react("plotMain", degTraces, commonLayout("Degradation D(t)","D"), {displayModeBar:false, responsive:true});
+    Plotly.react("plotMain", traces, commonLayout("Degradation D(t)","D"), {displayModeBar:false, responsive:true});
   }
   else if (selectedPlot === "price"){
-    Plotly.react("plotMain",
-      [{x:t, y:data.price, type:"scatter", name:"Price", line:{width:3}}],
-      commonLayout("Price","p"),
-      {displayModeBar:false, responsive:true}
-    );
+    const traces = [{x:t, y: bauData.price, type:"scatter", name:"BAU", line:{width:3, dash:"dash"}}];
+    if (hasScenarioData) traces.push({x:t, y: scenarioData.price, type:"scatter", name:"Scenario", line:{width:3}});
+    Plotly.react("plotMain", traces, commonLayout("Price","p"), {displayModeBar:false, responsive:true});
   }
   else if (selectedPlot === "harvest"){
-    Plotly.react("plotMain",
-      [{x:t, y:data.total_harvest, type:"scatter", name:"Harvest", line:{width:3}}],
-      commonLayout("Total harvest","Tonnes"),
-      {displayModeBar:false, responsive:true}
-    );
+    const traces = [{x:t, y: bauData.total_harvest, type:"scatter", name:"BAU", line:{width:3, dash:"dash"}}];
+    if (hasScenarioData) traces.push({x:t, y: scenarioData.total_harvest, type:"scatter", name:"Scenario", line:{width:3}});
+    Plotly.react("plotMain", traces, commonLayout("Total harvest","Tonnes"), {displayModeBar:false, responsive:true});
   }
 
   setTimeout(() => {
@@ -895,6 +1237,12 @@ function triggerSim(){
 // global sliders
 ["tmax","pop","n"].forEach((id) => el(id).addEventListener("input", triggerSim));
 
+// palette dropdown
+el("donutCmap").addEventListener("change", () => {
+  el("cmapLabel").textContent = el("donutCmap").value;
+  triggerSim();
+});
+
 // dropdown
 el("plotSelect").addEventListener("change", (e) => {
   selectedPlot = e.target.value;
@@ -902,8 +1250,10 @@ el("plotSelect").addEventListener("change", (e) => {
 });
 
 // initial
+refreshScenarioSelect();
 renderLands();
-renderDonut();
+updateShareTotal();
+setGlobalLabels();
 runSim();
 
 // resize handler
