@@ -326,6 +326,21 @@
             <div class="labelrow"><span><b>n_points</b></span><span id="nLabel" class="small"></span></div>
             <input id="n" type="range" min="120" max="600" step="30" value="300">
           </div>
+          
+          <!-- Optional: rolling average -->
+          <div class="row">
+            <div class="labelrow"><span><b>Rolling average</b></span><span id="rollLabel" class="small"></span></div>
+            <select id="rollOn">
+              <option value="off" selected>Off</option>
+              <option value="on">On</option>
+            </select>
+          </div>
+
+          <div class="row">
+            <div class="labelrow"><span><b>Rolling window (years)</b></span><span id="rollYearsLabel" class="small"></span></div>
+            <input id="rollYears" type="range" min="0.5" max="20" step="0.5" value="3">
+          </div>
+
 
           <!--Donut palette selector -->
           <div class="row">
@@ -544,7 +559,7 @@ function defaultEditableLand(n){
 function defaultScenarioState(index){
   return {
     name: `Scenario ${index+1}`,
-    globals: { tmax: 50, pop: 0.02, n: 300, selectedPlot: "none", donutCmap: "Jet" },
+    globals: { tmax: 50, pop: 0.02, n: 300, selectedPlot: "none", donutCmap: "Jet", rollOn: "off", rollYears: 3 },
     lands: [] // scenario lands only
   };
 }
@@ -578,9 +593,12 @@ function pullUIIntoActiveScenario(){
   sc.globals.n    = +el("n").value;
   sc.globals.selectedPlot = selectedPlot;
 
-  // ✅ NEW: store palette per-scenario
+  // NEW: store palette per-scenario
   sc.globals.donutCmap = el("donutCmap").value || "Jet";
 
+  // NEW: store rolling average settings per-scenario
+  sc.globals.rollOn = el("rollOn").value;
+  sc.globals.rollYears = +el("rollYears").value;
   sc.lands = deepClone(landsState);
 }
 
@@ -600,6 +618,10 @@ function pushScenarioToUI(idx){
   //restore palette per scenario
   el("donutCmap").value = sc.globals.donutCmap || "Jet";
   el("cmapLabel").textContent = el("donutCmap").value;
+
+  //restore rolling average settings per scenario
+  el("rollOn").value = sc.globals.rollOn || "off";
+  el("rollYears").value = sc.globals.rollYears || 3;
 
   landsState = deepClone(sc.lands);
 
@@ -639,6 +661,9 @@ function setGlobalLabels(){
   el("tmaxLabel").textContent = el("tmax").value + " yrs";
   el("popLabel").textContent  = (+el("pop").value).toFixed(3);
   el("nLabel").textContent    = el("n").value;
+  el("rollLabel").textContent = el("rollOn").value;
+  el("rollYearsLabel").textContent = (+el("rollYears").value).toFixed(1) + " yrs";
+
 
   //palette label
   el("cmapLabel").textContent = el("donutCmap").value;
@@ -890,6 +915,10 @@ function renderLands(){
       .forEach(inp => inp.addEventListener("input", updateFromUI));
     scenSel.addEventListener("change", updateFromUI);
 
+    // el("rollOn").addEventListener("change", triggerSim);
+    // el("rollYears").addEventListener("input", triggerSim);
+
+
     applyRecoveryVisibility();
     applyScenarioVisibility();
     setLandLabels(i);
@@ -1115,6 +1144,41 @@ async function runSim(){
     return out;
   }
 
+  function rollingMean(arr, k){
+  // centered rolling mean; edges use smaller window
+  const n = arr.length;
+  if (!arr || n === 0) return arr;
+  k = Math.max(1, Math.floor(k));
+  if (k <= 1) return arr.slice();
+
+  const half = Math.floor(k/2);
+  const out = new Array(n);
+
+  // prefix sums for O(n)
+  const ps = new Array(n+1);
+  ps[0] = 0;
+  for (let i=0; i<n; i++) ps[i+1] = ps[i] + arr[i];
+
+  for (let i=0; i<n; i++){
+    const a = Math.max(0, i-half);
+    const b = Math.min(n-1, i+half);
+    const sum = ps[b+1] - ps[a];
+    out[i] = sum / (b - a + 1);
+  }
+  return out;
+}
+
+  function smoothSeries(y, t){
+    const sc = scenarios[activeScenario];
+    const on = (sc?.globals?.rollOn || "off") === "on";
+    if (!on) return y;
+
+    const years = Math.max(0.1, +sc.globals.rollYears || 3);
+    const dt = (t && t.length > 1) ? (t[1] - t[0]) : 1;
+    const k = Math.max(1, Math.round(years / Math.max(dt, 1e-9)));
+    return rollingMean(y, k);
+  }
+
   // BAU series
   const bau_soil = bauData.soils[0];
   const bau_deg  = bauData.degradations[0];
@@ -1149,14 +1213,17 @@ async function runSim(){
   // Soil plot: BAU + scenario lands
   const soilTraces = [];
   soilTraces.push({
-    x: t, y: bauData.soils[0],
-    type: "scatter", name: "BAU (Business as usual)",
-    line: { width: 6, dash: "dash" }
+    x: t,
+    y: smoothSeries(bauData.soils[0], t),
+    type: "scatter",
+    name: "BAU (Business as usual)",
+    line: { width: 6, color: "black" }
   });
+
 
   if (hasScenarioData){
     for (let i=0; i<scenarioData.land_names.length; i++){
-      soilTraces.push({x:t, y:scenarioData.soils[i], type:"scatter", name:scenarioData.land_names[i], line:{width:6}});
+      soilTraces.push({x:t, y:smoothSeries(scenarioData.soils[i], t), type:"scatter", name:scenarioData.land_names[i], line:{width:6}});
     }
   }
   Plotly.react("plotSoil", soilTraces, commonLayout("Soil", "Index"), {displayModeBar:false, responsive:true});
@@ -1171,52 +1238,52 @@ async function runSim(){
 
   if (selectedPlot === "prod"){
     const traces = [];
-    traces.push({x:t, y: bauData.total_production, type:"scatter", name:"BAU Total", line:{width:3, dash:"dash"}});
+    traces.push({x:t, y: smoothSeries(bauData.total_production, t), type:"scatter", name:"BAU Total", line:{width:6, color:"black"}});
     if (hasScenarioData){
       for (let i=0; i<scenarioData.land_names.length; i++){
-        traces.push({x:t, y:scenarioData.production_by_land[i], type:"scatter", name:scenarioData.land_names[i], line:{width:3}});
+        traces.push({x:t, y:smoothSeries(scenarioData.production_by_land[i], t), type:"scatter", name:scenarioData.land_names[i], line:{width:6}, opacity:0.2});
       }
-      traces.push({x:t, y:scenarioData.total_production, type:"scatter", name:"Scenario Total", line:{width:3, dash:"dot"}});
+      traces.push({x:t, y:smoothSeries(scenarioData.total_production, t), type:"scatter", name:"Scenario Total", line:{width:6, dash:"dot"}});
     }
     Plotly.react("plotMain", traces, commonLayout("Production", "Tonnes"), {displayModeBar:false, responsive:true});
   }
   else if (selectedPlot === "pop"){
-    const traces = [{x:t, y: bauData.population, type:"scatter", name:"BAU", line:{width:3, dash:"dash"}}];
-    if (hasScenarioData) traces.push({x:t, y: scenarioData.population, type:"scatter", name:"Scenario", line:{width:3}});
+    const traces = [{x:t, y: smoothSeries(bauData.population, t), type:"scatter", name:"BAU", line:{width:6, color:"black"}}];
+    if (hasScenarioData) traces.push({x:t, y: smoothSeries(scenarioData.population, t), type:"scatter", name:"Scenario", line:{width:6}});
     Plotly.react("plotMain", traces, commonLayout("Population","People"), {displayModeBar:false, responsive:true});
   }
   else if (selectedPlot === "ssr"){
-    const traces = [{x:t, y: bauData.self_sufficiency_ratio, type:"scatter", name:"BAU", line:{width:3, dash:"dash"}}];
-    if (hasScenarioData) traces.push({x:t, y: scenarioData.self_sufficiency_ratio, type:"scatter", name:"Scenario", line:{width:3}});
+    const traces = [{x:t, y: smoothSeries(bauData.self_sufficiency_ratio, t), type:"scatter", name:"BAU", line:{width:6, color:"black"}}];
+    if (hasScenarioData) traces.push({x:t, y: smoothSeries(scenarioData.self_sufficiency_ratio, t), type:"scatter", name:"Scenario", line:{width:6}});
     Plotly.react("plotMain", traces, commonLayout("Self-sufficiency","%"), {displayModeBar:false, responsive:true});
   }
   else if (selectedPlot === "inc"){
-    const traces = [{x:t, y: bauData.average_real_income, type:"scatter", name:"BAU", line:{width:3, dash:"dash"}}];
-    if (hasScenarioData) traces.push({x:t, y: scenarioData.average_real_income, type:"scatter", name:"Scenario", line:{width:3}});
+    const traces = [{x:t, y: smoothSeries(bauData.average_real_income, t), type:"scatter", name:"BAU", line:{width:6, color:"black"}}];
+    if (hasScenarioData) traces.push({x:t, y: smoothSeries(scenarioData.average_real_income, t), type:"scatter", name:"Scenario", line:{width:6}});
     Plotly.react("plotMain", traces, commonLayout("Real income","£ (real)"), {displayModeBar:false, responsive:true});
   }
   else if (selectedPlot === "aff"){
-    const traces = [{x:t, y: bauData.affordability_index, type:"scatter", name:"BAU", line:{width:3, dash:"dash"}}];
-    if (hasScenarioData) traces.push({x:t, y: scenarioData.affordability_index, type:"scatter", name:"Scenario", line:{width:3}});
+    const traces = [{x:t, y: smoothSeries(bauData.affordability_index, t), type:"scatter", name:"BAU", line:{width:6, color:"black"}}];
+    if (hasScenarioData) traces.push({x:t, y: smoothSeries(scenarioData.affordability_index, t), type:"scatter", name:"Scenario", line:{width:6}});
     Plotly.react("plotMain", traces, commonLayout("Affordability","Index"), {displayModeBar:false, responsive:true});
   }
   else if (selectedPlot === "deg"){
-    const traces = [{x:t, y: bauData.degradations[0], type:"scatter", name:"BAU", line:{width:3, dash:"dash"}}];
+    const traces = [{x:t, y: smoothSeries(bauData.degradations[0], t), type:"scatter", name:"BAU", line:{width:6, color:"black"}}];
     if (hasScenarioData){
       for (let i=0; i<scenarioData.land_names.length; i++){
-        traces.push({x:t, y: scenarioData.degradations[i], type:"scatter", name:scenarioData.land_names[i], line:{width:3}});
+        traces.push({x:t, y: smoothSeries(scenarioData.degradations[i], t), type:"scatter", name:scenarioData.land_names[i], line:{width:6}});
       }
     }
     Plotly.react("plotMain", traces, commonLayout("Degradation D(t)","D"), {displayModeBar:false, responsive:true});
   }
   else if (selectedPlot === "price"){
-    const traces = [{x:t, y: bauData.price, type:"scatter", name:"BAU", line:{width:3, dash:"dash"}}];
-    if (hasScenarioData) traces.push({x:t, y: scenarioData.price, type:"scatter", name:"Scenario", line:{width:3}});
+    const traces = [{x:t, y: smoothSeries(bauData.price, t), type:"scatter", name:"BAU", line:{width:6, color:"black"}}];
+    if (hasScenarioData) traces.push({x:t, y: smoothSeries(scenarioData.price, t), type:"scatter", name:"Scenario", line:{width:6}});
     Plotly.react("plotMain", traces, commonLayout("Price","p"), {displayModeBar:false, responsive:true});
   }
   else if (selectedPlot === "harvest"){
-    const traces = [{x:t, y: bauData.total_harvest, type:"scatter", name:"BAU", line:{width:3, dash:"dash"}}];
-    if (hasScenarioData) traces.push({x:t, y: scenarioData.total_harvest, type:"scatter", name:"Scenario", line:{width:3}});
+    const traces = [{x:t, y: smoothSeries(bauData.total_harvest, t), type:"scatter", name:"BAU", line:{width:6, color:"black"}}];
+    if (hasScenarioData) traces.push({x:t, y: smoothSeries(scenarioData.total_harvest, t), type:"scatter", name:"Scenario", line:{width:6}});
     Plotly.react("plotMain", traces, commonLayout("Total harvest","Tonnes"), {displayModeBar:false, responsive:true});
   }
 
@@ -1230,12 +1297,28 @@ async function runSim(){
 // Debounce
 let timer = null;
 function triggerSim(){
+  setGlobalLabels();
   clearTimeout(timer);
   timer = setTimeout(runSim, 140);
 }
 
 // global sliders
-["tmax","pop","n"].forEach((id) => el(id).addEventListener("input", triggerSim));
+["tmax","pop","n"].forEach((id) => el(id).addEventListener("input", () => {
+  setGlobalLabels();
+  triggerSim();
+}));
+
+//rolling controls
+el("rollOn").addEventListener("change", () => {
+  setGlobalLabels();
+  triggerSim();
+});
+
+el("rollYears").addEventListener("input", () => {
+  setGlobalLabels();
+  triggerSim();
+});
+
 
 // palette dropdown
 el("donutCmap").addEventListener("change", () => {
