@@ -25,26 +25,20 @@ def B_pulse_train(t: float, omega: int, tau: int = 1, phase: float = 0.0, eps: f
 
     Matches:
       Bi(t)=0 if t in [k \omega, k \omega + \tau), else 1
-
-    Notes:
-      - omega and tau are in years
-      - tau must be < \omega
-      - phase shifts the cycle start (in years)
     """
     omega = int(omega)
     tau = int(tau)
     if omega <= 0:
         return 1.0
-
     if t < 0:
-        return 1.0  # pre-cycle, assume cash crops  
-    
-    cycle_time = (t - phase) % omega
+        return 1.0  # pre-cycle, assume cash crops
 
+    cycle_time = (t - phase) % omega
     if cycle_time < tau - eps:
         return 0.0
     else:
         return 1.0
+
 
 # ------------------------------------------------------------
 # Degradation functions
@@ -81,6 +75,7 @@ def degradation_natural_synthetic(t: float, params: Dict) -> float:
     y = beta * t
     return a0 * np.exp(-x) + a1 * (1 - np.exp(-y))
 
+
 def degradation_fertiliser_parabola(t: float, params: Dict) -> float:
     """
     Returns g(F) (time-constant). B(t) is applied outside (in the ODE).
@@ -95,9 +90,6 @@ def degradation_fertiliser_parabola(t: float, params: Dict) -> float:
     return g_fertiliser(F, zeta, D0)
 
 
-
-
-
 SCENARIOS = {
     "Constant degradation D": degradation_constant,
     "Phase-out at T_int": degradation_phaseout,
@@ -108,7 +100,6 @@ SCENARIOS = {
 # ------------------------------------------------------------
 # Recovery functions
 # ------------------------------------------------------------
-
 
 def alpha_constant(S: float, params: Dict) -> float:
     return float(params["alpha_const"])
@@ -126,6 +117,19 @@ RECOVERY_MODES = {
     "Logistic alpha(S)": alpha_logistic,
 }
 
+# ------------------------------------------------------------
+# Yield response (paper-aligned)
+# ------------------------------------------------------------
+
+def h_yield(F: float, xi: float, psi: float) -> float:
+    """
+    h(F) = max(0, (-F^2 + xi*F) * exp(-psi*F))
+    """
+    F = float(F)
+    xi = float(xi)
+    psi = float(psi)
+    val = (-F*F + xi*F) * np.exp(-psi * F)
+    return float(max(0.0, val))
 
 # ------------------------------------------------------------
 # Data structures
@@ -137,59 +141,53 @@ class LandConfig:
     Configuration for a single land / land owner.
     """
     name: str
-    alpha: float              # intrinsic recovery rate alpha_i
-    S0: float                 # initial soil health S_i(0)
-    scenario_name: str        # key into SCENARIOS
-    deg_params: Dict          # parameters for D_i(t)
-    land_fraction: float      # share of total land (0–1)
-    P_max: float              # maximum yield scaling for this land
-    recovery_name: str = "Constant alpha"   # key into RECOVERY_MODES
-    recovery_params: Dict = None            # parameters for alpha(S)
+    alpha: float
+    S0: float
+    scenario_name: str
+    deg_params: Dict
+    land_fraction: float
+    P_max: float
+    recovery_name: str = "Constant alpha"
+    recovery_params: Dict = None
 
-    #Farming Mode parameters
-    omega: int = 1          # cycle length (years)
-    tau: int = 0            # cover-crop duration (years). tau=0 => always cash
-    phase: float = 0.0      # optional phase shift (years)
+    # Farming mode
+    omega: int = 1
+    tau: int = 0
+    phase: float = 0.0
 
-    # Multipliers for cash vs cover
-    D_cash_scale: float = 1.0     # scale D(t) when B=1
-    D_cover_scale: float = 0.6    # scale D(t) when B=0 (less degradation)
-    alpha_cash_scale: float = 1.0 # scale alpha when B=1
-    alpha_cover_scale: float = 1.2# scale alpha when B=0 (more recovery)
-
-    prod_cash_scale: float = 1.0  # scale production when B=1
-    prod_cover_scale: float = 0.0 # typically 0 if cover/fallow
-
-    
-
+    # NEW: per-land emissions factors (tCO2eq/(ha*yr))
+    # If None, the simulator falls back to global defaults.
+    E_H: Optional[float] = None
+    E_S: Optional[float] = None
 
 
 @dataclass
 class SimulationResult:
-    """
-    Output container for a multi-land simulation.
-    """
-    t: np.ndarray                       # (n_times,)
-    soils: np.ndarray                   # (n_lands, n_times)
-    degradations: np.ndarray            # (n_lands, n_times)
-    productions: np.ndarray             # (n_lands, n_times)
-    total_production: np.ndarray        # (n_times,)
-    weighted_soil: np.ndarray           # (n_times,)
-    land_names: List[str]               # list of land names
-    land_fractions: np.ndarray          # (n_lands,)
-    alphas: np.ndarray                  # (n_lands,)
-    P_max_vec: np.ndarray               # (n_lands,)
-    population: np.ndarray              # (n_times,)
-    self_sufficiency_ratio: np.ndarray  # (n_times,)
-    average_real_income: np.ndarray     # (n_times,)
-    affordability_index: np.ndarray     # (n_times,)
-    omega: int = 1                      # years per cycle
-    tau: int = 0                        # years of cover crop per cycle (tau=0 => always cultivated)
-    phase: float = 0.0                  # phase shift for farming mode (in years)
+    t: np.ndarray
+    soils: np.ndarray
+    degradations: np.ndarray
+
+    productions: np.ndarray              # (n_lands, n_times) tonnes/yr
+    total_production: np.ndarray         # (n_times,) tonnes/yr
+    weighted_soil: np.ndarray
+
+    land_names: List[str]
+    land_fractions: np.ndarray
+    alphas: np.ndarray
+    P_max_vec: np.ndarray
+
+    population: np.ndarray
+    self_sufficiency_ratio: np.ndarray
+    average_real_income: np.ndarray
+    affordability_index: np.ndarray
+
     harvest_per_land: Optional[np.ndarray] = None
     total_harvest: Optional[np.ndarray] = None
     price: Optional[np.ndarray] = None
     affordability: Optional[np.ndarray] = None
+
+    emissions_by_land: Optional[np.ndarray] = None   # (n_lands, n_times) tCO2eq/yr
+    total_emissions: Optional[np.ndarray] = None     # (n_times,) tCO2eq/yr
 
 
 # ------------------------------------------------------------
@@ -206,58 +204,32 @@ def _soil_ode_single(
     omega: int,
     tau: int,
     phase: float,
-) -> float:
+) -> np.ndarray:
     S_val = float(S[0])
 
-    # Intrinsic recovery
     a = float(alpha_fun(S_val, recovery_params))
-
-    # Baseline degradation from scenario (e.g. g(F))
     D_base = float(D_fun(t, deg_params))
 
-    # Two-mode cultivation signal
     B_t = B_pulse_train(t, omega=omega, tau=tau, phase=phase)
+
+    # paper-aligned: degradation off during cover
     D_t = D_base * B_t
+
     net = a - D_t
     if abs(net) < 1e-12:
         net = 0.0
-    # print(net * S_val * (1.0 - S_val), net, S_val, t)
+
     return np.array([net * S_val * (1.0 - S_val)])
 
 
+def _population_ODE(P: float, population_growth_rate: float) -> float:
+    return population_growth_rate * P
 
-def _population_ODE(
-    P: float,
-    population_growth_rate: float,
-) -> float:
-    """
-    Population ODE
-    dP/dt = population_growth_rate * P
-    """
-    P_t = population_growth_rate * P
-    return P_t
+def _average_income_ODE(I: float, income_growth_rate: float) -> float:
+    return income_growth_rate * I
 
-def _average_income_ODE(
-    I: float,
-    income_growth_rate: float,
-) -> float:
-    """
-    Average income ODE
-    dI/dt = income_growth_rate * I
-    """
-    I_t = income_growth_rate * I
-    return I_t
-
-def _inflation_index_ODE(
-    F: float,
-    inflation_rate: float,
-) -> float:
-    """
-    Inflation index ODE
-    dF/dt = inflation_rate * F
-    """
-    F_t = inflation_rate * F
-    return F_t
+def _inflation_index_ODE(F: float, inflation_rate: float) -> float:
+    return inflation_rate * F
 
 def all_ODEs(
     t: float,
@@ -266,26 +238,15 @@ def all_ODEs(
     income_growth_rate: float,
     inflation_rate: float,
 ) -> np.ndarray:
-    """
-    Combined ODE system for all variables.
-    """
-    P = y[0]
-    I = y[1]
-    F = y[2]
-    dP_dt = _population_ODE(P, population_growth_rate)
-    dI_dt = _average_income_ODE(I, income_growth_rate)
-    dF_dt = _inflation_index_ODE(F, inflation_rate)  # example inflation rate
-    return np.array([dP_dt, dI_dt, dF_dt])
+    P, I, F = y
+    return np.array([
+        _population_ODE(P, population_growth_rate),
+        _average_income_ODE(I, income_growth_rate),
+        _inflation_index_ODE(F, inflation_rate),
+    ])
 
-def initial_conditions(
-    P0: float,
-    I0: float, 
-    F0: float, 
-) -> np.ndarray:
-    """
-    Initial conditions for all variables.
-    """
-    return np.array([P0, I0, F0])   
+def initial_conditions(P0: float, I0: float, F0: float) -> np.ndarray:
+    return np.array([P0, I0, F0])
 
 
 def simulate_multi_land(
@@ -298,26 +259,26 @@ def simulate_multi_land(
     population_growth_rate: float = 0.01,
     income_growth_rate: float = 0.014,
     inflation_rate: float = 0.017,
-    # ---- NEW econ parameters with defaults ----
-    harvest_fraction: float = 1.0,        # fraction of production harvested
-    price_demand_scale: float = 1.0,      # A in p = (A / Q)^(1/ε)
-    price_demand_elasticity: float = 0.8, # ε > 0
-    income: float = 1.0,                  # representative income
-    calories_per_unit: float = 1_100_000,       # kcal per tonne
-    min_calories: float = 1.0, 
-    calorie_per_person: float = 700_000,   # kcal per person per year
-    total_land_area: float = 560_000,    # total land area in hectares
+
+    # economics
+    harvest_fraction: float = 1.0,
+    price_demand_scale: float = 1.0,
+    price_demand_elasticity: float = 0.8,
+
+    # affordability
+    income: float = 1.0,
+    calories_per_unit: float = 1_100_000,
+    min_calories: float = 1.0,
+    calorie_per_person: float = 700_000,
+
+    # land area
+    total_land_area: float = 560_000,  # hectares
+
+    # GLOBAL defaults (used only if land.E_H/E_S not provided)
+    E_H_default: float = 1.6,
+    E_S_default: float = 1.28,
 ) -> SimulationResult:
-    """
-    Simulate soil and production dynamics for multiple lands.
 
-    Each land is solved independently (1D ODE per land) using the same time grid.
-
-    NEW:
-    - harvest_per_land, total_harvest
-    - price from constant-elasticity inverse demand
-    - affordability index from income vs minimum calorie cost
-    """
     if len(lands) == 0:
         raise ValueError("simulate_multi_land: need at least one LandConfig")
 
@@ -326,7 +287,8 @@ def simulate_multi_land(
 
     soils = np.zeros((n_lands, n_points))
     degradations = np.zeros((n_lands, n_points))
-    productions = np.zeros((n_lands, n_points))
+    productions = np.zeros((n_lands, n_points))  # tonnes/yr
+    emissions = np.zeros((n_lands, n_points))    # tCO2eq/yr
 
     land_names: List[str] = []
     land_fractions: List[float] = []
@@ -335,120 +297,115 @@ def simulate_multi_land(
 
     for i, land in enumerate(lands):
         land_names.append(land.name)
-        land_fractions.append(land.land_fraction)
-        alphas.append(land.alpha)
-        P_max_vec.append(land.P_max)
+        land_fractions.append(float(land.land_fraction))
+        alphas.append(float(land.alpha))
+        P_max_vec.append(float(land.P_max))
 
         if land.scenario_name not in SCENARIOS:
             raise ValueError(f"Unknown scenario '{land.scenario_name}' for land {land.name}")
         if land.recovery_name not in RECOVERY_MODES:
             raise ValueError(f"Unknown recovery mode '{land.recovery_name}' for land {land.name}")
-        
+
         alpha_fun = RECOVERY_MODES[land.recovery_name]
 
-        # If not provided, default based on mode
         if land.recovery_name == "Logistic alpha(S)":
             rp = dict(land.recovery_params or {})
             rp.setdefault("alpha_max", 0.25)
             rp.setdefault("rho", 50.0)
             rp.setdefault("S_T", 0.2)
         else:
-            # constant mode uses LandConfig.alpha
             rp = {"alpha_const": land.alpha}
 
         D_fun = SCENARIOS[land.scenario_name]
-        min_window = max(0.1, land.omega / 10.0)  # min step for ODE solver based on farming cycle
-        # Solve single-land soil ODE
+        min_window = max(0.1, land.omega / 10.0)
+
         sol = solve_ivp(
             _soil_ode_single,
-            method = 'RK45',
+            method="RK45",
             t_span=(0.0, T_max),
             y0=[land.S0],
             t_eval=t_eval,
-            max_step=min_window / 10.0,   # or /20
+            max_step=min_window / 10.0,
             rtol=1e-8,
             atol=1e-10,
             args=(D_fun, land.deg_params, alpha_fun, rp, land.omega, land.tau, land.phase),
         )
 
-
         S_i = sol.y[0]
         soils[i, :] = S_i
 
-        # Degradation time series for this land
         B_series = np.array([B_pulse_train(tt, land.omega, land.tau, land.phase) for tt in t_eval])
         D_base_series = np.array([D_fun(tt, land.deg_params) for tt in t_eval])
         degradations[i, :] = D_base_series * B_series
 
+        # ---------- production (paper-aligned) ----------
+        L_i = float(total_land_area) * float(land.land_fraction)  # hectares
 
-        # Production: P_i(t) = P_max_i * S_i(t) * L_i
-        productions[i, :] = land.P_max * S_i * land.land_fraction * B_series
+        F_i = float(land.deg_params.get("F", 1.0))
+        xi = float(land.deg_params.get("xi", 10.0))
+        psi = float(land.deg_params.get("psi", 0.5))
+        hF = h_yield(F_i, xi, psi)
 
+        Y_rate = float(land.P_max) * hF * B_series * S_i  # tonne/(ha*yr)
+        productions[i, :] = Y_rate * L_i                  # tonne/yr
 
-    land_fractions_arr = np.array(land_fractions)
-    alphas_arr = np.array(alphas)
-    P_max_arr = np.array(P_max_vec)
+        # ---------- emissions (per land factors) ----------
+        E_H = float(land.E_H) if land.E_H is not None else float(E_H_default)
+        E_S = float(land.E_S) if land.E_S is not None else float(E_S_default)
 
-    total_production = total_land_area *productions.sum(axis=0)
+        emissions[i, :] = (E_H * B_series + E_S * (1.0 - B_series)) * L_i
+
+    land_fractions_arr = np.array(land_fractions, dtype=float)
+    alphas_arr = np.array(alphas, dtype=float)
+    P_max_arr = np.array(P_max_vec, dtype=float)
+
+    total_production = productions.sum(axis=0)
 
     sol_all = solve_ivp(
         all_ODEs,
-        method = 'RK45',
+        method="RK45",
         t_span=(0.0, T_max),
         y0=initial_conditions(initial_population, initial_income, initial_inflation_index),
         t_eval=t_eval,
         args=(population_growth_rate, income_growth_rate, inflation_rate),
-        # max_step=0.1,      # try 0.1 or 0.05 years
-        # rtol=1e-7,
-        # atol=1e-9,
     )
 
     population = sol_all.y[0]
     average_income = sol_all.y[1]
     inflation_index = sol_all.y[2]
-    average_real_income = average_income / inflation_index
-    calorie_demand = population * calorie_per_person
-    calorie_production = total_production * calories_per_unit
-    self_sufficiency_ratio = 100 * (calorie_production / calorie_demand)
+    average_real_income = average_income / np.maximum(inflation_index, 1e-12)
 
-    # Weighted soil (using land fractions) – guard against sum = 0
+    calorie_demand = population * float(calorie_per_person)
+    calorie_production = total_production * float(calories_per_unit)
+    self_sufficiency_ratio = 100.0 * (calorie_production / np.maximum(calorie_demand, 1e-12))
+
     if land_fractions_arr.sum() > 0:
-        weighted_soil = (
-            land_fractions_arr[:, None] * soils
-        ).sum(axis=0) / land_fractions_arr.sum()
+        weighted_soil = (land_fractions_arr[:, None] * soils).sum(axis=0) / land_fractions_arr.sum()
     else:
         weighted_soil = soils.mean(axis=0)
 
-    # --------------------------------------------------------
-    # NEW: Harvest, price, and affordability
-    # --------------------------------------------------------
-
-    # Clamp harvest_fraction in [0, 1]
     hf = float(np.clip(harvest_fraction, 0.0, 1.0))
-
-    # Harvest per land and total
     harvest_per_land = hf * productions
     total_harvest = harvest_per_land.sum(axis=0)
 
-    # Constant-elasticity inverse demand: p = (A / Q)^(1/ε)
     tiny = 1e-8
     eps = float(price_demand_elasticity) if price_demand_elasticity > 0 else 0.8
     A = float(price_demand_scale)
-
     Q_eff = np.maximum(total_harvest, tiny)
     price = (A / Q_eff) ** (1.0 / eps)
 
-    # Affordability index: income / (cost of minimum calories)
-    # price_per_calorie = price / calories_per_unit
-    # C_min = price_per_calorie * min_calories
-    cal_per_unit_eff = max(calories_per_unit, tiny)
+    cal_per_unit_eff = max(float(calories_per_unit), tiny)
     price_per_calorie = price / cal_per_unit_eff
-
     C_min = price_per_calorie * float(min_calories)
     C_min_eff = np.maximum(C_min, tiny)
 
-    affordability = float(income) / C_min_eff
-    affordability_index = 0.01 * (self_sufficiency_ratio * average_real_income) / initial_income
+    income_used = average_real_income if float(income) == 1.0 else float(income)
+    affordability = income_used / C_min_eff
+
+    affordability_index = 0.01 * (self_sufficiency_ratio * average_real_income) / float(initial_income)
+
+    total_emissions = emissions.sum(axis=0)
+
     return SimulationResult(
         t=t_eval,
         soils=soils,
@@ -464,6 +421,8 @@ def simulate_multi_land(
         total_harvest=total_harvest,
         price=price,
         affordability=affordability,
+        emissions_by_land=emissions,
+        total_emissions=total_emissions,
         population=population,
         self_sufficiency_ratio=self_sufficiency_ratio,
         average_real_income=average_real_income,

@@ -10,7 +10,7 @@
     html, body {
       height: 100%;
       margin: 0;
-      overflow: hidden; /* no scrolling anywhere */
+      overflow: hidden;
       font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
     }
     *, *::before, *::after { box-sizing: border-box; }
@@ -67,28 +67,25 @@
       min-width: 0;
     }
 
-    /* === MAIN GRID: left plots + right donut === */
     .main{
       height: calc(100vh - 44px);
       display: grid;
-      grid-template-columns: 1.4fr 0.8fr; /* left plots / right donut */
+      grid-template-columns: 1.4fr 0.8fr;
       gap: 12px;
       padding: 10px;
       align-items: stretch;
       min-width: 0;
     }
 
-    /* Left column: plot stack */
     .content{
       height: 100%;
       display: grid;
-      grid-template-rows: 1fr auto; /* soil + optional secondary */
+      grid-template-rows: 1fr auto;
       gap: 10px;
       min-width: 0;
       min-height: 0;
     }
 
-    /* Right column */
     .side{
       height: 100%;
       min-width: 0;
@@ -105,10 +102,7 @@
       min-height: 0;
     }
 
-    /* Soil should fill available space */
     #soilCard { min-height: 0; }
-
-    /* Secondary plot is hidden by default */
     #secondaryCard { display: none; }
 
     .plot{
@@ -118,7 +112,6 @@
       min-height: 0;
     }
 
-    /* Donut card */
     .side-card{
       height: 100%;
       border: 1px solid rgba(0,0,0,0.14);
@@ -152,7 +145,6 @@
       min-height: 0;
     }
 
-    /* Modal overlay + panel */
     .modal-overlay{
       position: fixed;
       inset: 0;
@@ -167,7 +159,7 @@
     .modal{
       width: min(980px, 94vw);
       max-height: 86vh;
-      overflow: auto; /* modal itself can scroll internally */
+      overflow: auto;
       background: rgba(255,255,255,0.10);
       backdrop-filter: blur(10px) saturate(120%);
       -webkit-backdrop-filter: blur(10px) saturate(120%);
@@ -234,7 +226,6 @@
       font-size: 12px;
     }
 
-    /* Optional: make lands list scroll inside modal a bit nicer */
     #landsContainer{
       max-height: 55vh;
       overflow: auto;
@@ -269,6 +260,7 @@
           <option value="deg">Degradation</option>
           <option value="price">Price</option>
           <option value="harvest">Harvest</option>
+          <option value="emis">Emissions</option>
         </select>
 
         <button class="btn" id="openControls">Controls</button>
@@ -276,9 +268,7 @@
       </div>
     </div>
 
-    <!-- main grid wrapper -->
     <div class="main">
-      <!-- Left plots -->
       <div class="content" id="content">
         <div class="card" id="soilCard">
           <div id="plotSoil" class="plot"></div>
@@ -289,7 +279,6 @@
         </div>
       </div>
 
-      <!-- Right donut -->
       <div class="side">
         <div class="side-card">
           <div class="side-title">Indicator system</div>
@@ -300,7 +289,6 @@
     </div>
   </div>
 
-  <!-- Modal overlay -->
   <div class="modal-overlay" id="overlay">
     <div class="modal" id="modal">
       <div class="modal-header">
@@ -326,8 +314,8 @@
             <div class="labelrow"><span><b>n_points</b></span><span id="nLabel" class="small"></span></div>
             <input id="n" type="range" min="120" max="600" step="30" value="300">
           </div>
-          
-          <!-- Optional: rolling average -->
+
+          <!-- Rolling average -->
           <div class="row">
             <div class="labelrow"><span><b>Rolling average</b></span><span id="rollLabel" class="small"></span></div>
             <select id="rollOn">
@@ -341,8 +329,7 @@
             <input id="rollYears" type="range" min="0.5" max="20" step="0.5" value="3">
           </div>
 
-
-          <!--Donut palette selector -->
+          <!-- Donut palette -->
           <div class="row">
             <div class="labelrow">
               <span><b>Donut heatmap palette</b></span>
@@ -372,6 +359,8 @@
 
           <div class="small" style="margin-top:6px;">
             <b>Business as usual</b> is always included as a fixed baseline (not editable).
+            <br>
+            BAU emissions factors fixed: <b>E_H = 1.6</b>, <b>E_S = 1.28</b> tCO₂eq/(ha·yr)
           </div>
 
           <div id="landsContainer" class="grid-controls" style="grid-template-columns: 1fr 1fr; margin-top:8px;"></div>
@@ -395,10 +384,9 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape") overlay.cl
 
 // ---------- Donut: signed % improvements ----------
 const EPS = 1e-9;
-const DONUT_CMIN = -50;   // -50%
-const DONUT_CMAX = +50;   // +50%
+const DONUT_CMIN = -50;
+const DONUT_CMAX = +50;
 
-// If your affordability index is "higher is better", keep +1. If lower is better, set -1.
 const SIGN = {
   soil: +1,
   prod: +1,
@@ -408,16 +396,20 @@ const SIGN = {
   aff:  +1,
   deg:  -1,
   price:-1,
-  harvest:+1
+  harvest:+1,
+  emis: -1,
 };
 
+// ---- SAFETY: null-safe mean + improvement ----
 function mean(arr){
+  if (!arr || !arr.length) return 0;
   let s = 0;
   for (let i=0; i<arr.length; i++) s += arr[i];
-  return s / Math.max(arr.length, 1);
+  return s / arr.length;
 }
 
 function signedPctImprovement(seriesScenario, seriesBAU, sign=+1){
+  if (!seriesScenario || !seriesBAU) return 0;
   const ms = mean(seriesScenario);
   const mb = mean(seriesBAU);
   const pct = 100 * (ms - mb) / (Math.abs(mb) + EPS);
@@ -426,7 +418,7 @@ function signedPctImprovement(seriesScenario, seriesBAU, sign=+1){
 
 function clamp(x, a, b){ return Math.max(a, Math.min(b, x)); }
 
-// Approx JET stops (stable)
+// Approx JET stops
 const JET_STOPS = [
   [0.00, [0,   0, 131]],
   [0.125,[0,  60, 170]],
@@ -436,19 +428,14 @@ const JET_STOPS = [
   [1.00, [128,  0,   0]],
 ];
 
-
-
-// Palette library (Plotly colorscale arrays)
 const COLOR_SCALES = {
   Jet: JET_STOPS.map(([t, c]) => [t, `rgb(${c[0]},${c[1]},${c[2]})`]),
-
   Hot: [
     [0.00, "#000000"],
     [0.33, "#ff0000"],
     [0.66, "#ffff00"],
     [1.00, "#ffffff"]
   ],
-
   Viridis: [
     [0.00,"#440154"], [0.25,"#3b528b"], [0.50,"#21918c"], [0.75,"#5ec962"], [1.00,"#fde725"]
   ],
@@ -458,10 +445,10 @@ const COLOR_SCALES = {
   YlGnBu: [
     [0.00,"#ffffd9"], [0.25,"#a1dab4"], [0.50,"#41b6c4"], [0.75,"#2c7fb8"], [1.00,"#253494"]
   ],
-  RdBu_r: [ // low=red, high=blue
+  RdBu_r: [
     [0.00,"#b2182b"], [0.50,"#f7f7f7"], [1.00,"#2166ac"]
   ],
-  RdBu: [ // low=blue, high=red
+  RdBu: [
     [0.00,"#2166ac"], [0.50,"#f7f7f7"], [1.00,"#b2182b"]
   ],
   RedYellowGreen: [
@@ -544,30 +531,34 @@ const BAU_LAND = {
   omega: 3,
   tau: 1,
   phase: 0.0,
+
+  EH: 1.6,
+  ES: 1.28,
 };
 
 function defaultEditableLand(n){
   const base = deepClone(BAU_LAND);
   base.name = `Land ${n}`;
   base.share = 100;
+  base.EH = 1.6;
+  base.ES = 1.28;
   return base;
 }
 
-/* =========================
-   SCENARIOS
-========================= */
 function defaultScenarioState(index){
   return {
     name: `Scenario ${index+1}`,
-    globals: { tmax: 50, pop: 0.02, n: 300, selectedPlot: "none", donutCmap: "Jet", rollOn: "off", rollYears: 3 },
-    lands: [] // scenario lands only
+    globals: {
+      tmax: 50, pop: 0.02, n: 300, selectedPlot: "none",
+      donutCmap: "Jet", rollOn: "off", rollYears: 3,
+    },
+    lands: []
   };
 }
 
 let scenarios = [ defaultScenarioState(0) ];
 let activeScenario = 0;
 
-// app state
 let selectedPlot = "none";
 let landsState = deepClone(scenarios[0].lands);
 
@@ -585,7 +576,6 @@ function refreshScenarioSelect(){
 
 function pullUIIntoActiveScenario(){
   const sc = scenarios[activeScenario];
-
   sc.name = el("scenarioName").value || sc.name;
 
   sc.globals.tmax = +el("tmax").value;
@@ -593,12 +583,10 @@ function pullUIIntoActiveScenario(){
   sc.globals.n    = +el("n").value;
   sc.globals.selectedPlot = selectedPlot;
 
-  // NEW: store palette per-scenario
   sc.globals.donutCmap = el("donutCmap").value || "Jet";
-
-  // NEW: store rolling average settings per-scenario
   sc.globals.rollOn = el("rollOn").value;
   sc.globals.rollYears = +el("rollYears").value;
+
   sc.lands = deepClone(landsState);
 }
 
@@ -615,11 +603,9 @@ function pushScenarioToUI(idx){
 
   el("scenarioName").value = sc.name;
 
-  //restore palette per scenario
   el("donutCmap").value = sc.globals.donutCmap || "Jet";
   el("cmapLabel").textContent = el("donutCmap").value;
 
-  //restore rolling average settings per scenario
   el("rollOn").value = sc.globals.rollOn || "off";
   el("rollYears").value = sc.globals.rollYears || 3;
 
@@ -646,26 +632,18 @@ el("scenarioName").addEventListener("input", () => {
 
 el("newScenarioBtn").addEventListener("click", () => {
   pullUIIntoActiveScenario();
-
   const newIdx = scenarios.length;
   scenarios.push(defaultScenarioState(newIdx));
-
   refreshScenarioSelect();
   pushScenarioToUI(newIdx);
 });
 
-/* =========================
-   EXISTING APP LOGIC
-========================= */
 function setGlobalLabels(){
   el("tmaxLabel").textContent = el("tmax").value + " yrs";
   el("popLabel").textContent  = (+el("pop").value).toFixed(3);
   el("nLabel").textContent    = el("n").value;
   el("rollLabel").textContent = el("rollOn").value;
   el("rollYearsLabel").textContent = (+el("rollYears").value).toFixed(1) + " yrs";
-
-
-  //palette label
   el("cmapLabel").textContent = el("donutCmap").value;
 }
 
@@ -694,6 +672,9 @@ function setLandLabels(i){
   if (el(`tauLabel_${i}`))   el(`tauLabel_${i}`).textContent   = `${landsState[i].tau} yrs`;
   if (el(`phaseLabel_${i}`)) el(`phaseLabel_${i}`).textContent = landsState[i].phase.toFixed(1);
 
+  if (el(`ehLabel_${i}`))    el(`ehLabel_${i}`).textContent    = (+landsState[i].EH).toFixed(2);
+  if (el(`esLabel_${i}`))    el(`esLabel_${i}`).textContent    = (+landsState[i].ES).toFixed(2);
+
   if (el(`scenLabel_${i}`))  el(`scenLabel_${i}`).textContent =
     (landsState[i].scenario_name === "Fertiliser parabola") ? "g(F)·B(t)" : "D_const";
 }
@@ -716,6 +697,9 @@ function renderLands(){
   }
 
   landsState.forEach((land, i) => {
+    if (land.EH === undefined || land.EH === null) land.EH = 1.6;
+    if (land.ES === undefined || land.ES === null) land.ES = 1.28;
+
     const card = document.createElement("div");
     card.className = "control";
 
@@ -820,6 +804,22 @@ function renderLands(){
 
         <div class="small">Degradation applies only when cultivated (B=1).</div>
       </div>
+
+      <div style="margin-top:6px; border-top: 1px solid rgba(0,0,0,0.10); padding-top:8px;">
+        <div class="small" style="font-weight:700; margin-bottom:4px;">Emissions factors (per land)</div>
+
+        <div class="row">
+          <div class="labelrow"><span>E_H (cultivation)</span><span id="ehLabel_${i}" class="small"></span></div>
+          <input id="eh_${i}" type="range" min="0" max="20" step="0.01" value="${land.EH}">
+        </div>
+
+        <div class="row">
+          <div class="labelrow"><span>E_S (cover/fallow)</span><span id="esLabel_${i}" class="small"></span></div>
+          <input id="es_${i}" type="range" min="-20" max="20" step="0.01" value="${land.ES}">
+        </div>
+
+        <div class="small">Units: tCO₂eq/(ha·yr). Total emissions are computed using Lᵢ and Bᵢ(t).</div>
+      </div>
     `;
 
     container.appendChild(card);
@@ -846,6 +846,9 @@ function renderLands(){
     const omegaInp = el(`omega_${i}`);
     const tauInp   = el(`tau_${i}`);
     const phaseInp = el(`phase_${i}`);
+
+    const ehInp = el(`eh_${i}`);
+    const esInp = el(`es_${i}`);
 
     const alphaConstRow = el(`alphaConstRow_${i}`);
     const alphaLogBlock = el(`alphaLogisticBlock_${i}`);
@@ -897,6 +900,9 @@ function renderLands(){
       landsState[i].tau = +tauInp.value;
       landsState[i].phase = +phaseInp.value;
 
+      landsState[i].EH = +ehInp.value;
+      landsState[i].ES = +esInp.value;
+
       if (landsState[i].tau > landsState[i].omega) landsState[i].tau = landsState[i].omega;
 
       applyScenarioVisibility();
@@ -907,17 +913,13 @@ function renderLands(){
       triggerSim();
     };
 
-    [nameInp, shareInp, alphaInp, amaxInp, sTInp, rhoInp, s0Inp, pmaxInp, dInp]
+    [nameInp, shareInp, alphaInp, amaxInp, sTInp, rhoInp, s0Inp, pmaxInp, dInp, ehInp, esInp]
       .forEach(inp => inp.addEventListener("input", updateFromUI));
     recSel.addEventListener("change", updateFromUI);
 
     [scenSel, FInp, zetaInp, D0Inp, omegaInp, tauInp, phaseInp]
       .forEach(inp => inp.addEventListener("input", updateFromUI));
     scenSel.addEventListener("change", updateFromUI);
-
-    // el("rollOn").addEventListener("change", triggerSim);
-    // el("rollYears").addEventListener("input", triggerSim);
-
 
     applyRecoveryVisibility();
     applyScenarioVisibility();
@@ -927,7 +929,7 @@ function renderLands(){
   refreshScenarioSelect();
 }
 
-// Add/remove land (scenario lands only)
+// Add/remove land
 el("addLandBtn").addEventListener("click", () => {
   if (landsState.length >= 10) return;
   const n = landsState.length + 1;
@@ -951,7 +953,6 @@ const commonLayout = (title, ytitle) => ({
   margin: { l: 58, r: 10, t: 58, b: 52 },
   paper_bgcolor: "rgba(0,0,0,0)",
   plot_bgcolor: "rgba(0,0,0,0)",
-
   xaxis: {
     showline: true,
     linewidth: 3,
@@ -959,7 +960,6 @@ const commonLayout = (title, ytitle) => ({
     tickfont: { size: 16 },
     title: { text: "Time (years)", font: { size: 16 } }
   },
-
   yaxis: {
     showline: true,
     linewidth: 3,
@@ -967,38 +967,25 @@ const commonLayout = (title, ytitle) => ({
     title: { text: ytitle, font: { size: 16 } },
     tickfont: { size: 16 }
   },
-
-  legend: {
-    font: { size: 18 },
-    orientation: "h",
-    y: -0.35
-  }
+  legend: { font: { size: 18 }, orientation: "h", y: -0.35 }
 });
 
 function renderDonutWithHeat(values){
   const labels = [
-    "Soil health",
-    "Production",
-    "Population",
-    "Self-sufficiency",
-    "Real income",
-    "Affordability",
-    "Degradation",
-    "Price",
-    "Harvest"
+    "Soil health","Production","Population","Self-sufficiency",
+    "Real income","Affordability","Degradation","Price","Harvest",
+    "Total emissions"
   ];
 
-  //pick palette from current scenario
   const cmapName = scenarios[activeScenario]?.globals?.donutCmap || "Jet";
   const cmap = COLOR_SCALES[cmapName] || COLOR_SCALES.Jet;
-
   const colors = values.map(v => valueToColor(v, cmap));
 
   const pie = {
     type: "pie",
     labels,
     values: labels.map(() => 1),
-    hole: 0.52,
+    hole: 0.62,
     text: values.map(v => `<b>${fmtPct(v)}</b>`),
     textinfo: "label+text",
     texttemplate: "<b>%{label}</b><br>%{text}",
@@ -1022,11 +1009,11 @@ function renderDonutWithHeat(values){
       color: [DONUT_CMIN, DONUT_CMAX],
       cmin: DONUT_CMIN,
       cmax: DONUT_CMAX,
-      colorscale: cmap,     
+      colorscale: cmap,
       showscale: true,
       colorbar: {
         orientation: "h",
-        title: { text: "% \u03b4 vs BAU", side: "bottom" },
+        title: { text: "% δ vs BAU", side: "bottom" },
         thickness: 14,
         len: 0.85,
         y: -.1
@@ -1037,13 +1024,30 @@ function renderDonutWithHeat(values){
     showlegend: false
   };
 
-  const layout = {
-    margin: { l: 10, r: 40, t: 10, b: 10 },
-    paper_bgcolor: "rgba(0,0,0,0)",
-    plot_bgcolor: "rgba(0,0,0,0)",
-    xaxis: { visible: false, showgrid: false, zeroline: false },
-    yaxis: { visible: false, showgrid: false, zeroline: false },
-  };
+const layout = {
+  margin: { l: 10, r: 40, t: 10, b: 10 },
+  paper_bgcolor: "rgba(0,0,0,0)",
+  plot_bgcolor: "rgba(0,0,0,0)",
+  xaxis: { visible: false, showgrid: false, zeroline: false },
+  yaxis: { visible: false, showgrid: false, zeroline: false },
+
+  images: [
+    {
+      source: "/static/logos/cropped-gallant-1.webp",
+      xref: "paper",
+      yref: "paper",
+      x: 0.5,
+      y: 0.5,
+      sizex: 0.41,
+      sizey: 0.41,
+      xanchor: "center",
+      yanchor: "middle",
+      sizing: "contain",
+      opacity: 0.85,
+      layer: "above"
+    }
+  ]
+};
 
   Plotly.react("plotDonut", [pie, colorbarTrace], layout, { displayModeBar:false, responsive:true });
 }
@@ -1074,10 +1078,12 @@ async function fetchSim(payload){
 
 function buildPayloadFromLands(lands){
   const sumShares = Math.max(lands.reduce((a,l)=>a + (+l.share||0), 0), 1e-9);
+
   return {
     T_max: +el("tmax").value,
     n_points: +el("n").value,
     population_growth_rate: +el("pop").value,
+
     lands: lands.map(l => {
       const scenario_name = l.scenario_name || "Fertiliser parabola";
       const deg_params = (scenario_name === "Fertiliser parabola")
@@ -1101,6 +1107,9 @@ function buildPayloadFromLands(lands){
         omega: l.omega,
         tau: l.tau,
         phase: l.phase,
+
+        E_H: +l.EH,
+        E_S: +l.ES,
       };
     })
   };
@@ -1111,10 +1120,8 @@ async function runSim(){
   refreshScenarioSelect();
   setGlobalLabels();
 
-  // Always run BAU
   const bauPayload = buildPayloadFromLands([{...BAU_LAND, share: 1}]);
 
-  // Scenario exists only if user added scenario lands
   const hasScenarioLands = landsState.length > 0;
   const scenarioPayload = hasScenarioLands ? buildPayloadFromLands(landsState) : null;
 
@@ -1145,33 +1152,32 @@ async function runSim(){
   }
 
   function rollingMean(arr, k){
-  // centered rolling mean; edges use smaller window
-  const n = arr.length;
-  if (!arr || n === 0) return arr;
-  k = Math.max(1, Math.floor(k));
-  if (k <= 1) return arr.slice();
+    if (!arr || !arr.length) return arr;
+    const n = arr.length;
+    k = Math.max(1, Math.floor(k));
+    if (k <= 1) return arr.slice();
 
-  const half = Math.floor(k/2);
-  const out = new Array(n);
+    const half = Math.floor(k/2);
+    const out = new Array(n);
 
-  // prefix sums for O(n)
-  const ps = new Array(n+1);
-  ps[0] = 0;
-  for (let i=0; i<n; i++) ps[i+1] = ps[i] + arr[i];
+    const ps = new Array(n+1);
+    ps[0] = 0;
+    for (let i=0; i<n; i++) ps[i+1] = ps[i] + arr[i];
 
-  for (let i=0; i<n; i++){
-    const a = Math.max(0, i-half);
-    const b = Math.min(n-1, i+half);
-    const sum = ps[b+1] - ps[a];
-    out[i] = sum / (b - a + 1);
+    for (let i=0; i<n; i++){
+      const a = Math.max(0, i-half);
+      const b = Math.min(n-1, i+half);
+      const sum = ps[b+1] - ps[a];
+      out[i] = sum / (b - a + 1);
+    }
+    return out;
   }
-  return out;
-}
 
   function smoothSeries(y, t){
     const sc = scenarios[activeScenario];
     const on = (sc?.globals?.rollOn || "off") === "on";
     if (!on) return y;
+    if (!y || !y.length) return y;
 
     const years = Math.max(0.1, +sc.globals.rollYears || 3);
     const dt = (t && t.length > 1) ? (t[1] - t[0]) : 1;
@@ -1179,11 +1185,9 @@ async function runSim(){
     return rollingMean(y, k);
   }
 
-  // BAU series
   const bau_soil = bauData.soils[0];
   const bau_deg  = bauData.degradations[0];
 
-  // Scenario series (if exists)
   const w = scenarioWeights();
   const sc_soil = hasScenarioData ? weightedSeries(scenarioData.soils, w) : bau_soil;
   const sc_deg  = hasScenarioData ? weightedSeries(scenarioData.degradations, w) : bau_deg;
@@ -1196,6 +1200,9 @@ async function runSim(){
   const sc_price = hasScenarioData ? scenarioData.price : bauData.price;
   const sc_harv  = hasScenarioData ? scenarioData.total_harvest : bauData.total_harvest;
 
+  const bau_emis = bauData.total_emissions;
+  const sc_emis  = hasScenarioData ? scenarioData.total_emissions : bau_emis;
+
   const donutValues = [
     signedPctImprovement(sc_soil,  bau_soil,  SIGN.soil),
     signedPctImprovement(sc_prod,  bauData.total_production, SIGN.prod),
@@ -1206,11 +1213,12 @@ async function runSim(){
     signedPctImprovement(sc_deg,   bau_deg,   SIGN.deg),
     signedPctImprovement(sc_price, bauData.price, SIGN.price),
     signedPctImprovement(sc_harv,  bauData.total_harvest, SIGN.harvest),
+    signedPctImprovement(sc_emis,  bau_emis,  SIGN.emis),
   ].map(v => clamp(v, DONUT_CMIN, DONUT_CMAX));
 
   renderDonutWithHeat(donutValues);
 
-  // Soil plot: BAU + scenario lands
+  // Soil plot
   const soilTraces = [];
   soilTraces.push({
     x: t,
@@ -1220,15 +1228,39 @@ async function runSim(){
     line: { width: 6, color: "black" }
   });
 
-
   if (hasScenarioData){
     for (let i=0; i<scenarioData.land_names.length; i++){
       soilTraces.push({x:t, y:smoothSeries(scenarioData.soils[i], t), type:"scatter", name:scenarioData.land_names[i], line:{width:6}});
     }
   }
-  Plotly.react("plotSoil", soilTraces, commonLayout("Soil", "Index"), {displayModeBar:false, responsive:true});
+  // Plotly.react("plotSoil", soilTraces, commonLayout("Soil", "Index"), {displayModeBar:false, responsive:true});
 
-  // Secondary plot depends on dropdown
+  const soilLayout = {
+  ...commonLayout("Soil", "Index"),
+
+  images: [
+    {
+      source: "/static/logos/Media_986283_smxx.png",
+      xref: "paper",
+      yref: "paper",
+      x: 0.5,
+      y: 0.3,
+      sizex: 1.2,
+      sizey: 3.0,
+      xanchor: "center",
+      yanchor: "middle",
+      sizing: "contain",
+      opacity: 0.2,   // very low opacity
+      layer: "below"
+    }
+  ]
+};
+
+Plotly.react("plotSoil", soilTraces, soilLayout, {
+  displayModeBar:false,
+  responsive:true
+});
+
   if (selectedPlot === "none"){
     showSecondary(false);
     Plotly.purge("plotMain");
@@ -1241,11 +1273,11 @@ async function runSim(){
     traces.push({x:t, y: smoothSeries(bauData.total_production, t), type:"scatter", name:"BAU Total", line:{width:6, color:"black"}});
     if (hasScenarioData){
       for (let i=0; i<scenarioData.land_names.length; i++){
-        traces.push({x:t, y:smoothSeries(scenarioData.production_by_land[i], t), type:"scatter", name:scenarioData.land_names[i], line:{width:6}, opacity:0.2});
+        traces.push({x:t, y:smoothSeries(scenarioData.production_by_land[i], t), type:"scatter", name:scenarioData.land_names[i], line:{width:6}, opacity:0.25});
       }
       traces.push({x:t, y:smoothSeries(scenarioData.total_production, t), type:"scatter", name:"Scenario Total", line:{width:6, dash:"dot"}});
     }
-    Plotly.react("plotMain", traces, commonLayout("Production", "Tonnes"), {displayModeBar:false, responsive:true});
+    Plotly.react("plotMain", traces, commonLayout("Production", "Tonnes/yr"), {displayModeBar:false, responsive:true});
   }
   else if (selectedPlot === "pop"){
     const traces = [{x:t, y: smoothSeries(bauData.population, t), type:"scatter", name:"BAU", line:{width:6, color:"black"}}];
@@ -1277,14 +1309,53 @@ async function runSim(){
     Plotly.react("plotMain", traces, commonLayout("Degradation D(t)","D"), {displayModeBar:false, responsive:true});
   }
   else if (selectedPlot === "price"){
+    if (!bauData.price) { Plotly.purge("plotMain"); return; }
     const traces = [{x:t, y: smoothSeries(bauData.price, t), type:"scatter", name:"BAU", line:{width:6, color:"black"}}];
-    if (hasScenarioData) traces.push({x:t, y: smoothSeries(scenarioData.price, t), type:"scatter", name:"Scenario", line:{width:6}});
+    if (hasScenarioData && scenarioData.price) traces.push({x:t, y: smoothSeries(scenarioData.price, t), type:"scatter", name:"Scenario", line:{width:6}});
     Plotly.react("plotMain", traces, commonLayout("Price","p"), {displayModeBar:false, responsive:true});
   }
   else if (selectedPlot === "harvest"){
+    if (!bauData.total_harvest) { Plotly.purge("plotMain"); return; }
     const traces = [{x:t, y: smoothSeries(bauData.total_harvest, t), type:"scatter", name:"BAU", line:{width:6, color:"black"}}];
-    if (hasScenarioData) traces.push({x:t, y: smoothSeries(scenarioData.total_harvest, t), type:"scatter", name:"Scenario", line:{width:6}});
-    Plotly.react("plotMain", traces, commonLayout("Total harvest","Tonnes"), {displayModeBar:false, responsive:true});
+    if (hasScenarioData && scenarioData.total_harvest) traces.push({x:t, y: smoothSeries(scenarioData.total_harvest, t), type:"scatter", name:"Scenario", line:{width:6}});
+    Plotly.react("plotMain", traces, commonLayout("Total harvest","Tonnes/yr"), {displayModeBar:false, responsive:true});
+  }
+  else if (selectedPlot === "emis"){
+    if (!bauData.total_emissions) { Plotly.purge("plotMain"); return; }
+
+    const traces = [];
+    traces.push({
+      x:t,
+      y: smoothSeries(bauData.total_emissions, t),
+      type:"scatter",
+      name:"BAU total",
+      line:{width:6, color:"black"}
+    });
+
+    if (hasScenarioData && scenarioData.total_emissions){
+      if (scenarioData.emissions_by_land && scenarioData.emissions_by_land.length){
+        for (let i=0; i<scenarioData.land_names.length; i++){
+          traces.push({
+            x:t,
+            y: smoothSeries(scenarioData.emissions_by_land[i], t),
+            type:"scatter",
+            name:`${scenarioData.land_names[i]}`,
+            line:{width:4},
+            opacity:0.25
+          });
+        }
+      }
+
+      traces.push({
+        x:t,
+        y: smoothSeries(scenarioData.total_emissions, t),
+        type:"scatter",
+        name:"Scenario total",
+        line:{width:6, dash:"dot"}
+      });
+    }
+
+    Plotly.react("plotMain", traces, commonLayout("Net emissions","tCO2eq/yr"), {displayModeBar:false, responsive:true});
   }
 
   setTimeout(() => {
@@ -1303,22 +1374,11 @@ function triggerSim(){
 }
 
 // global sliders
-["tmax","pop","n"].forEach((id) => el(id).addEventListener("input", () => {
-  setGlobalLabels();
-  triggerSim();
-}));
+["tmax","pop","n"].forEach((id) => el(id).addEventListener("input", triggerSim));
 
-//rolling controls
-el("rollOn").addEventListener("change", () => {
-  setGlobalLabels();
-  triggerSim();
-});
-
-el("rollYears").addEventListener("input", () => {
-  setGlobalLabels();
-  triggerSim();
-});
-
+// rolling controls
+el("rollOn").addEventListener("change", triggerSim);
+el("rollYears").addEventListener("input", triggerSim);
 
 // palette dropdown
 el("donutCmap").addEventListener("change", () => {
@@ -1339,7 +1399,6 @@ updateShareTotal();
 setGlobalLabels();
 runSim();
 
-// resize handler
 window.addEventListener("resize", () => {
   Plotly.Plots.resize("plotSoil");
   if (selectedPlot !== "none") Plotly.Plots.resize("plotMain");
