@@ -112,6 +112,25 @@
       min-height: 0;
     }
 
+    /* --- PDF controls (slider) --- */
+    #pdfControls{
+      display: none;
+      padding: 6px 10px 10px 10px;
+      border-top: 1px solid rgba(0,0,0,0.10);
+      background: rgba(255,255,255,0.25);
+      border-radius: 0 0 10px 10px;
+    }
+    .pdf-row{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap: 10px;
+      font-size: 12px;
+      margin-bottom: 6px;
+      color: #222;
+    }
+    #pdfTime { width: 100%; }
+
     .side-card{
       height: 100%;
       border: 1px solid rgba(0,0,0,0.14);
@@ -261,6 +280,22 @@
           <option value="price">Price</option>
           <option value="harvest">Harvest</option>
           <option value="emis">Emissions</option>
+
+          <!-- macro plots -->
+          <option value="infl">Inflation index</option>
+          <option value="mu_nom">Nominal income</option>
+          <option value="lambda">Redistribution λ</option>
+
+          <!-- inequality indicators -->
+          <option value="palma">Palma ratio</option>
+          <option value="gini">Gini coefficient</option>
+
+          <!-- NEW: food indicators -->
+          <option value="food_price">Food price index</option>
+          <option value="food_sec">Food security index</option>
+
+          <!-- distribution plot -->
+          <option value="inc_pdf">Income distribution (PDF)</option>
         </select>
 
         <button class="btn" id="openControls">Controls</button>
@@ -276,6 +311,14 @@
 
         <div class="card" id="secondaryCard">
           <div id="plotMain" class="plot"></div>
+
+          <div id="pdfControls">
+            <div class="pdf-row">
+              <div><b>PDF time</b>: <span id="pdfTimeLabel">t = 0.0</span></div>
+              <div class="small">Drag to change distribution</div>
+            </div>
+            <input id="pdfTime" type="range" min="0" max="0" step="1" value="0">
+          </div>
         </div>
       </div>
 
@@ -283,12 +326,13 @@
         <div class="side-card">
           <div class="side-title">Indicator system</div>
           <div id="plotDonut" class="donut"></div>
-          <div class="side-note">Signed % change vs BAU (time-average).</div>
+          <div class="side-note">Signed % change vs BAU (end state).</div>
         </div>
       </div>
     </div>
   </div>
 
+  <!-- modal -->
   <div class="modal-overlay" id="overlay">
     <div class="modal" id="modal">
       <div class="modal-header">
@@ -311,11 +355,25 @@
           </div>
 
           <div class="row">
+            <div class="labelrow"><span><b>Income growth (δμ)</b></span><span id="muGrowLabel" class="small"></span></div>
+            <input id="muGrow" type="range" min="0" max="0.05" step="0.001" value="0.014">
+          </div>
+
+          <div class="row">
+            <div class="labelrow"><span><b>Inflation rate (δI)</b></span><span id="inflLabel" class="small"></span></div>
+            <input id="infl" type="range" min="0" max="0.08" step="0.001" value="0.017">
+          </div>
+
+          <div class="row">
+            <div class="labelrow"><span><b>Redistribution rate (δλ)</b></span><span id="lamRateLabel" class="small"></span></div>
+            <input id="lamRate" type="range" min="-0.2" max="0.2" step="0.005" value="0.001">
+          </div>
+
+          <div class="row">
             <div class="labelrow"><span><b>n_points</b></span><span id="nLabel" class="small"></span></div>
             <input id="n" type="range" min="120" max="600" step="30" value="300">
           </div>
 
-          <!-- Rolling average -->
           <div class="row">
             <div class="labelrow"><span><b>Rolling average</b></span><span id="rollLabel" class="small"></span></div>
             <select id="rollOn">
@@ -329,16 +387,15 @@
             <input id="rollYears" type="range" min="0.5" max="20" step="0.5" value="3">
           </div>
 
-          <!-- Donut palette -->
           <div class="row">
             <div class="labelrow">
               <span><b>Donut heatmap palette</b></span>
               <span id="cmapLabel" class="small"></span>
             </div>
             <select id="donutCmap">
-              <option value="Jet" selected>Jet (classic)</option>
+              <option value="Viridis" selected>Viridis</option>
               <option value="Hot">Hot</option>
-              <option value="Viridis">Viridis</option>
+              <option value="Jet">Jet (classic)</option>
               <option value="Cividis">Cividis</option>
               <option value="YlGnBu">YlGnBu</option>
               <option value="RdBu_r">RdBu (red→blue)</option>
@@ -398,24 +455,27 @@ const SIGN = {
   price:-1,
   harvest:+1,
   emis: -1,
+  food_price: -1,
+  food_sec:   -1,
 };
 
-// ---- SAFETY: null-safe mean + improvement ----
 function mean(arr){
   if (!arr || !arr.length) return 0;
   let s = 0;
   for (let i=0; i<arr.length; i++) s += arr[i];
   return s / arr.length;
 }
-
-function signedPctImprovement(seriesScenario, seriesBAU, sign=+1){
+function last(arr){
+  if (!arr || !arr.length) return 0;
+  return arr[arr.length - 1];
+}
+function signedPctImprovementEnd(seriesScenario, seriesBAU, sign=+1){
   if (!seriesScenario || !seriesBAU) return 0;
-  const ms = mean(seriesScenario);
-  const mb = mean(seriesBAU);
-  const pct = 100 * (ms - mb) / (Math.abs(mb) + EPS);
+  const xs = last(seriesScenario);
+  const xb = last(seriesBAU);
+  const pct = 100 * (xs - xb) / (Math.abs(xb) + EPS);
   return sign * pct;
 }
-
 function clamp(x, a, b){ return Math.max(a, Math.min(b, x)); }
 
 // Approx JET stops
@@ -462,7 +522,6 @@ function hexToRgb(hex){
   const n = parseInt(full, 16);
   return [ (n>>16)&255, (n>>8)&255, n&255 ];
 }
-
 function parseColor(c){
   if (c.startsWith("rgb(")) {
     const m = c.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/i);
@@ -472,9 +531,7 @@ function parseColor(c){
   if (c.startsWith("#")) return hexToRgb(c);
   return [0,0,0];
 }
-
 function lerp(a,b,t){ return a + (b-a)*t; }
-
 function sampleColorscale(colorscale, t){
   t = clamp(t, 0, 1);
   for (let i=1; i<colorscale.length; i++){
@@ -493,13 +550,11 @@ function sampleColorscale(colorscale, t){
   const last = parseColor(colorscale[colorscale.length-1][1]);
   return `rgb(${last[0]},${last[1]},${last[2]})`;
 }
-
 function valueToColor(v, colorscale){
   const vv = clamp(v, DONUT_CMIN, DONUT_CMAX);
   const t = (vv - DONUT_CMIN) / (DONUT_CMAX - DONUT_CMIN);
   return sampleColorscale(colorscale, t);
 }
-
 function fmtPct(v){
   if (!isFinite(v)) return "0.0%";
   return (v>=0?"+":"") + v.toFixed(1) + "%";
@@ -550,7 +605,8 @@ function defaultScenarioState(index){
     name: `Scenario ${index+1}`,
     globals: {
       tmax: 50, pop: 0.02, n: 300, selectedPlot: "none",
-      donutCmap: "Jet", rollOn: "off", rollYears: 3,
+      donutCmap: "Viridis", rollOn: "off", rollYears: 3,
+      muGrow: 0.014, infl: 0.017, lamRate: 0.001,
     },
     lands: []
   };
@@ -583,9 +639,13 @@ function pullUIIntoActiveScenario(){
   sc.globals.n    = +el("n").value;
   sc.globals.selectedPlot = selectedPlot;
 
-  sc.globals.donutCmap = el("donutCmap").value || "Jet";
+  sc.globals.donutCmap = el("donutCmap").value || "Viridis";
   sc.globals.rollOn = el("rollOn").value;
   sc.globals.rollYears = +el("rollYears").value;
+
+  sc.globals.muGrow = +el("muGrow").value;
+  sc.globals.infl   = +el("infl").value;
+  sc.globals.lamRate= +el("lamRate").value;
 
   sc.lands = deepClone(landsState);
 }
@@ -603,11 +663,15 @@ function pushScenarioToUI(idx){
 
   el("scenarioName").value = sc.name;
 
-  el("donutCmap").value = sc.globals.donutCmap || "Jet";
+  el("donutCmap").value = sc.globals.donutCmap || "Viridis";
   el("cmapLabel").textContent = el("donutCmap").value;
 
   el("rollOn").value = sc.globals.rollOn || "off";
   el("rollYears").value = sc.globals.rollYears || 3;
+
+  el("muGrow").value = sc.globals.muGrow ?? 0.014;
+  el("infl").value   = sc.globals.infl ?? 0.017;
+  el("lamRate").value= sc.globals.lamRate ?? 0.001;
 
   landsState = deepClone(sc.lands);
 
@@ -645,6 +709,10 @@ function setGlobalLabels(){
   el("rollLabel").textContent = el("rollOn").value;
   el("rollYearsLabel").textContent = (+el("rollYears").value).toFixed(1) + " yrs";
   el("cmapLabel").textContent = el("donutCmap").value;
+
+  el("muGrowLabel").textContent = (+el("muGrow").value).toFixed(3);
+  el("inflLabel").textContent   = (+el("infl").value).toFixed(3);
+  el("lamRateLabel").textContent= (+el("lamRate").value).toFixed(3);
 }
 
 function updateShareTotal(){
@@ -971,14 +1039,16 @@ const commonLayout = (title, ytitle) => ({
 });
 
 function renderDonutWithHeat(values){
+  // UPDATED: include Palma + Gini + Food price + Food security
   const labels = [
     "Soil health","Production","Population","Self-sufficiency",
     "Real income","Affordability","Degradation","Price","Harvest",
-    "Total emissions"
+    "Total emissions",
+    "Food price index","Food security index"
   ];
 
-  const cmapName = scenarios[activeScenario]?.globals?.donutCmap || "Jet";
-  const cmap = COLOR_SCALES[cmapName] || COLOR_SCALES.Jet;
+  const cmapName = scenarios[activeScenario]?.globals?.donutCmap || "Viridis";
+  const cmap = COLOR_SCALES[cmapName] || COLOR_SCALES.Viridis;
   const colors = values.map(v => valueToColor(v, cmap));
 
   const pie = {
@@ -1024,30 +1094,29 @@ function renderDonutWithHeat(values){
     showlegend: false
   };
 
-const layout = {
-  margin: { l: 10, r: 40, t: 10, b: 10 },
-  paper_bgcolor: "rgba(0,0,0,0)",
-  plot_bgcolor: "rgba(0,0,0,0)",
-  xaxis: { visible: false, showgrid: false, zeroline: false },
-  yaxis: { visible: false, showgrid: false, zeroline: false },
-
-  images: [
-    {
-      source: "/static/logos/cropped-gallant-1.webp",
-      xref: "paper",
-      yref: "paper",
-      x: 0.5,
-      y: 0.5,
-      sizex: 0.41,
-      sizey: 0.41,
-      xanchor: "center",
-      yanchor: "middle",
-      sizing: "contain",
-      opacity: 0.85,
-      layer: "above"
-    }
-  ]
-};
+  const layout = {
+    margin: { l: 10, r: 40, t: 10, b: 10 },
+    paper_bgcolor: "rgba(0,0,0,0)",
+    plot_bgcolor: "rgba(0,0,0,0)",
+    xaxis: { visible: false, showgrid: false, zeroline: false },
+    yaxis: { visible: false, showgrid: false, zeroline: false },
+    images: [
+      {
+        source: "/static/logos/cropped-gallant-1.webp",
+        xref: "paper",
+        yref: "paper",
+        x: 0.5,
+        y: 0.5,
+        sizex: 0.41,
+        sizey: 0.41,
+        xanchor: "center",
+        yanchor: "middle",
+        sizing: "contain",
+        opacity: 0.85,
+        layer: "above"
+      }
+    ]
+  };
 
   Plotly.react("plotDonut", [pie, colorbarTrace], layout, { displayModeBar:false, responsive:true });
 }
@@ -1067,6 +1136,41 @@ function showSecondary(show){
   setTimeout(() => Plotly.Plots.resize("plotSoil"), 0);
 }
 
+function setPdfControlsVisible(on){
+  const controls = el("pdfControls");
+  controls.style.display = on ? "block" : "none";
+
+  const secondary = el("secondaryCard");
+  if (on) {
+    secondary.style.display = "grid";
+    secondary.style.gridTemplateRows = "1fr auto";
+  } else {
+    secondary.style.display = "block";
+    secondary.style.gridTemplateRows = "";
+  }
+
+  setTimeout(() => Plotly.Plots.resize("plotMain"), 0);
+}
+
+// ---- Income PDF state + slider wiring ----
+let incomePdfState = null;
+let pdfSliderBound = false;
+
+function setupPdfSlider(){
+  if (pdfSliderBound) return;
+  pdfSliderBound = true;
+
+  el("pdfTime").addEventListener("input", () => {
+    if (!incomePdfState) return;
+    const idx = Math.max(0, Math.min(+el("pdfTime").value, incomePdfState.t.length - 1));
+    const tt = incomePdfState.t[idx];
+    el("pdfTimeLabel").textContent = `t = ${tt.toFixed(2)}`;
+
+    const y = incomePdfState.pdf[idx];
+    Plotly.update("plotMain", { y: [y] }, {}, [0]);
+  });
+}
+
 async function fetchSim(payload){
   const resp = await fetch("/api/simulate", {
     method: "POST",
@@ -1083,6 +1187,9 @@ function buildPayloadFromLands(lands){
     T_max: +el("tmax").value,
     n_points: +el("n").value,
     population_growth_rate: +el("pop").value,
+    income_growth_rate: +el("muGrow").value,
+    inflation_rate: +el("infl").value,
+    redistribution_rate: +el("lamRate").value,
 
     lands: lands.map(l => {
       const scenario_name = l.scenario_name || "Fertiliser parabola";
@@ -1131,6 +1238,9 @@ async function runSim(){
   ]);
 
   const t = bauData.t;
+  console.log("food_price_index (BAU) sample:", bauData.food_price_index?.slice(0,5));
+  console.log("SSR (BAU) sample:", bauData.self_sufficiency_ratio?.slice(0,5));
+  console.log("inflation (BAU) sample:", bauData.inflation_index?.slice(0,5));
   const hasScenarioData = !!scenarioData;
 
   function scenarioWeights(){
@@ -1151,39 +1261,68 @@ async function runSim(){
     return out;
   }
 
-  function rollingMean(arr, k){
-    if (!arr || !arr.length) return arr;
-    const n = arr.length;
-    k = Math.max(1, Math.floor(k));
-    if (k <= 1) return arr.slice();
-
-    const half = Math.floor(k/2);
-    const out = new Array(n);
-
-    const ps = new Array(n+1);
-    ps[0] = 0;
-    for (let i=0; i<n; i++) ps[i+1] = ps[i] + arr[i];
-
-    for (let i=0; i<n; i++){
-      const a = Math.max(0, i-half);
-      const b = Math.min(n-1, i+half);
-      const sum = ps[b+1] - ps[a];
-      out[i] = sum / (b - a + 1);
-    }
-    return out;
-  }
-
-  function smoothSeries(y, t){
+  function smoothSeriesTrapezoid(y, t){
     const sc = scenarios[activeScenario];
     const on = (sc?.globals?.rollOn || "off") === "on";
     if (!on) return y;
-    if (!y || !y.length) return y;
+    if (!y?.length) return y;
+    if (!t || t.length !== y.length || y.length < 2) return y;
 
-    const years = Math.max(0.1, +sc.globals.rollYears || 3);
-    const dt = (t && t.length > 1) ? (t[1] - t[0]) : 1;
-    const k = Math.max(1, Math.round(years / Math.max(dt, 1e-9)));
-    return rollingMean(y, k);
+    const W = Math.max(0.1, +sc?.globals?.rollYears || 3);
+    const n = y.length;
+
+    const A = new Array(n).fill(0);
+    for (let i = 1; i < n; i++){
+      const dt = t[i] - t[i-1];
+      if (dt > 0) A[i] = A[i-1] + 0.5 * (y[i] + y[i-1]) * dt;
+      else A[i] = A[i-1];
+    }
+
+    function areaAt(tq, jHint){
+      if (tq <= t[0]) return { area: 0, j: 0 };
+      if (tq >= t[n-1]) return { area: A[n-1], j: Math.max(0, n-2) };
+
+      let j = Math.max(0, Math.min(jHint, n - 2));
+      while (j + 1 < n && t[j+1] < tq) j++;
+
+      const t0 = t[j], t1 = t[j+1];
+      const y0 = y[j], y1 = y[j+1];
+      const denom = (t1 - t0);
+      if (denom <= 0) return { area: A[j], j };
+
+      const alpha = (tq - t0) / denom;
+      const yq = y0 + alpha * (y1 - y0);
+
+      const seg = 0.5 * (y0 + yq) * (tq - t0);
+      return { area: A[j] + seg, j };
+    }
+
+    const out = new Array(n);
+    let jL = 0, jR = 0;
+
+    for (let i = 0; i < n; i++){
+      const mid = t[i];
+      let leftT  = mid - W/2;
+      let rightT = mid + W/2;
+
+      leftT = Math.max(leftT, t[0]);
+      rightT = Math.min(rightT, t[n-1]);
+
+      const width = rightT - leftT;
+      if (width <= 1e-12) { out[i] = y[i]; continue; }
+
+      const r = areaAt(rightT, jR);
+      const l = areaAt(leftT, jL);
+      jR = r.j;
+      jL = l.j;
+
+      out[i] = (r.area - l.area) / width;
+    }
+
+    return out;
   }
+
+  function smoothSeries(y, t){ return smoothSeriesTrapezoid(y, t); }
 
   const bau_soil = bauData.soils[0];
   const bau_deg  = bauData.degradations[0];
@@ -1203,17 +1342,35 @@ async function runSim(){
   const bau_emis = bauData.total_emissions;
   const sc_emis  = hasScenarioData ? scenarioData.total_emissions : bau_emis;
 
+  // inequality
+  const bau_palma = bauData.palma_ratio;
+  const sc_palma  = hasScenarioData ? scenarioData.palma_ratio : bau_palma;
+
+  const bau_gini = bauData.gini_coefficient;
+  const sc_gini  = hasScenarioData ? scenarioData.gini_coefficient : bau_gini;
+
+  // NEW: food
+  const bau_food_price = bauData.food_price_index;
+  const sc_food_price  = hasScenarioData ? scenarioData.food_price_index : bau_food_price;
+
+  const bau_food_sec = bauData.food_security_index;
+  const sc_food_sec  = hasScenarioData ? scenarioData.food_security_index : bau_food_sec;
+
   const donutValues = [
-    signedPctImprovement(sc_soil,  bau_soil,  SIGN.soil),
-    signedPctImprovement(sc_prod,  bauData.total_production, SIGN.prod),
-    signedPctImprovement(sc_pop,   bauData.population, SIGN.pop),
-    signedPctImprovement(sc_ssr,   bauData.self_sufficiency_ratio, SIGN.ssr),
-    signedPctImprovement(sc_inc,   bauData.average_real_income, SIGN.inc),
-    signedPctImprovement(sc_aff,   bauData.affordability_index, SIGN.aff),
-    signedPctImprovement(sc_deg,   bau_deg,   SIGN.deg),
-    signedPctImprovement(sc_price, bauData.price, SIGN.price),
-    signedPctImprovement(sc_harv,  bauData.total_harvest, SIGN.harvest),
-    signedPctImprovement(sc_emis,  bau_emis,  SIGN.emis),
+    signedPctImprovementEnd(sc_soil,  bau_soil,  SIGN.soil),
+    signedPctImprovementEnd(sc_prod,  bauData.total_production, SIGN.prod),
+    signedPctImprovementEnd(sc_pop,   bauData.population, SIGN.pop),
+    signedPctImprovementEnd(sc_ssr,   bauData.self_sufficiency_ratio, SIGN.ssr),
+    signedPctImprovementEnd(sc_inc,   bauData.average_real_income, SIGN.inc),
+    signedPctImprovementEnd(sc_aff,   bauData.affordability_index, SIGN.aff),
+    signedPctImprovementEnd(sc_deg,   bau_deg,   SIGN.deg),
+    signedPctImprovementEnd(sc_price, bauData.price, SIGN.price),
+    signedPctImprovementEnd(sc_harv,  bauData.total_harvest, SIGN.harvest),
+    signedPctImprovementEnd(sc_emis,  bau_emis,  SIGN.emis),
+
+    // NEW: food donut entries
+    signedPctImprovementEnd(sc_food_price, bau_food_price, SIGN.food_price),
+    signedPctImprovementEnd(sc_food_sec,   bau_food_sec,   SIGN.food_sec),
   ].map(v => clamp(v, DONUT_CMIN, DONUT_CMAX));
 
   renderDonutWithHeat(donutValues);
@@ -1233,42 +1390,55 @@ async function runSim(){
       soilTraces.push({x:t, y:smoothSeries(scenarioData.soils[i], t), type:"scatter", name:scenarioData.land_names[i], line:{width:6}});
     }
   }
-  // Plotly.react("plotSoil", soilTraces, commonLayout("Soil", "Index"), {displayModeBar:false, responsive:true});
 
   const soilLayout = {
-  ...commonLayout("Soil", "Index"),
+    ...commonLayout("Soil", "Index"),
+    images: [
+      {
+        source: "/static/logos/Media_986283_smxx.png",
+        xref: "paper",
+        yref: "paper",
+        x: 0.5,
+        y: 0.5,
+        sizex: 1.2,
+        sizey: 3.0,
+        xanchor: "center",
+        yanchor: "middle",
+        sizing: "contain",
+        opacity: 0.2,
+        layer: "below"
+      }
+    ]
+  };
 
-  images: [
-    {
-      source: "/static/logos/Media_986283_smxx.png",
-      xref: "paper",
-      yref: "paper",
-      x: 0.5,
-      y: 0.3,
-      sizex: 1.2,
-      sizey: 3.0,
-      xanchor: "center",
-      yanchor: "middle",
-      sizing: "contain",
-      opacity: 0.2,   // very low opacity
-      layer: "below"
-    }
-  ]
-};
-
-Plotly.react("plotSoil", soilTraces, soilLayout, {
-  displayModeBar:false,
-  responsive:true
-});
+  Plotly.react("plotSoil", soilTraces, soilLayout, {
+    displayModeBar:false,
+    responsive:true
+  });
 
   if (selectedPlot === "none"){
     showSecondary(false);
+    setPdfControlsVisible(false);
     Plotly.purge("plotMain");
     return;
   }
   showSecondary(true);
 
+  // Macro series + PDF (prefer scenario if present)
+  const infl = hasScenarioData ? scenarioData.inflation_index : bauData.inflation_index;
+  const muNom = hasScenarioData ? scenarioData.average_nominal_income : bauData.average_nominal_income;
+  const lam = hasScenarioData ? scenarioData.redistribution_lambda : bauData.redistribution_lambda;
+
+  const incX = hasScenarioData ? scenarioData.income_x : bauData.income_x;
+  const incPDF = hasScenarioData ? scenarioData.income_pdf : bauData.income_pdf;
+
+  // NEW: food series
+  const foodPrice = hasScenarioData ? scenarioData.food_price_index : bauData.food_price_index;
+  const foodSec   = hasScenarioData ? scenarioData.food_security_index : bauData.food_security_index;
+
+  // Secondary plot routing
   if (selectedPlot === "prod"){
+    setPdfControlsVisible(false);
     const traces = [];
     traces.push({x:t, y: smoothSeries(bauData.total_production, t), type:"scatter", name:"BAU Total", line:{width:6, color:"black"}});
     if (hasScenarioData){
@@ -1280,47 +1450,55 @@ Plotly.react("plotSoil", soilTraces, soilLayout, {
     Plotly.react("plotMain", traces, commonLayout("Production", "Tonnes/yr"), {displayModeBar:false, responsive:true});
   }
   else if (selectedPlot === "pop"){
+    setPdfControlsVisible(false);
     const traces = [{x:t, y: smoothSeries(bauData.population, t), type:"scatter", name:"BAU", line:{width:6, color:"black"}}];
     if (hasScenarioData) traces.push({x:t, y: smoothSeries(scenarioData.population, t), type:"scatter", name:"Scenario", line:{width:6}});
     Plotly.react("plotMain", traces, commonLayout("Population","People"), {displayModeBar:false, responsive:true});
   }
   else if (selectedPlot === "ssr"){
+    setPdfControlsVisible(false);
     const traces = [{x:t, y: smoothSeries(bauData.self_sufficiency_ratio, t), type:"scatter", name:"BAU", line:{width:6, color:"black"}}];
     if (hasScenarioData) traces.push({x:t, y: smoothSeries(scenarioData.self_sufficiency_ratio, t), type:"scatter", name:"Scenario", line:{width:6}});
     Plotly.react("plotMain", traces, commonLayout("Self-sufficiency","%"), {displayModeBar:false, responsive:true});
   }
   else if (selectedPlot === "inc"){
+    setPdfControlsVisible(false);
     const traces = [{x:t, y: smoothSeries(bauData.average_real_income, t), type:"scatter", name:"BAU", line:{width:6, color:"black"}}];
     if (hasScenarioData) traces.push({x:t, y: smoothSeries(scenarioData.average_real_income, t), type:"scatter", name:"Scenario", line:{width:6}});
     Plotly.react("plotMain", traces, commonLayout("Real income","£ (real)"), {displayModeBar:false, responsive:true});
   }
   else if (selectedPlot === "aff"){
+    setPdfControlsVisible(false);
     const traces = [{x:t, y: smoothSeries(bauData.affordability_index, t), type:"scatter", name:"BAU", line:{width:6, color:"black"}}];
     if (hasScenarioData) traces.push({x:t, y: smoothSeries(scenarioData.affordability_index, t), type:"scatter", name:"Scenario", line:{width:6}});
     Plotly.react("plotMain", traces, commonLayout("Affordability","Index"), {displayModeBar:false, responsive:true});
   }
   else if (selectedPlot === "deg"){
-    const traces = [{x:t, y: smoothSeries(bauData.degradations[0], t), type:"scatter", name:"BAU", line:{width:6, color:"black"}}];
+    setPdfControlsVisible(false);
+    const traces = [{x:t, y: bauData.degradations[0], type:"scatter", name:"BAU", line:{width:6, color:"black"}}];
     if (hasScenarioData){
       for (let i=0; i<scenarioData.land_names.length; i++){
-        traces.push({x:t, y: smoothSeries(scenarioData.degradations[i], t), type:"scatter", name:scenarioData.land_names[i], line:{width:6}});
+        traces.push({x:t, y: scenarioData.degradations[i], type:"scatter", name:scenarioData.land_names[i], line:{width:6}});
       }
     }
     Plotly.react("plotMain", traces, commonLayout("Degradation D(t)","D"), {displayModeBar:false, responsive:true});
   }
   else if (selectedPlot === "price"){
+    setPdfControlsVisible(false);
     if (!bauData.price) { Plotly.purge("plotMain"); return; }
     const traces = [{x:t, y: smoothSeries(bauData.price, t), type:"scatter", name:"BAU", line:{width:6, color:"black"}}];
     if (hasScenarioData && scenarioData.price) traces.push({x:t, y: smoothSeries(scenarioData.price, t), type:"scatter", name:"Scenario", line:{width:6}});
     Plotly.react("plotMain", traces, commonLayout("Price","p"), {displayModeBar:false, responsive:true});
   }
   else if (selectedPlot === "harvest"){
+    setPdfControlsVisible(false);
     if (!bauData.total_harvest) { Plotly.purge("plotMain"); return; }
     const traces = [{x:t, y: smoothSeries(bauData.total_harvest, t), type:"scatter", name:"BAU", line:{width:6, color:"black"}}];
     if (hasScenarioData && scenarioData.total_harvest) traces.push({x:t, y: smoothSeries(scenarioData.total_harvest, t), type:"scatter", name:"Scenario", line:{width:6}});
     Plotly.react("plotMain", traces, commonLayout("Total harvest","Tonnes/yr"), {displayModeBar:false, responsive:true});
   }
   else if (selectedPlot === "emis"){
+    setPdfControlsVisible(false);
     if (!bauData.total_emissions) { Plotly.purge("plotMain"); return; }
 
     const traces = [];
@@ -1357,6 +1535,142 @@ Plotly.react("plotSoil", soilTraces, soilLayout, {
 
     Plotly.react("plotMain", traces, commonLayout("Net emissions","tCO2eq/yr"), {displayModeBar:false, responsive:true});
   }
+  else if (selectedPlot === "infl"){
+    setPdfControlsVisible(false);
+    if (!infl) { Plotly.purge("plotMain"); return; }
+    const traces = [{x:t, y:smoothSeries(infl, t), type:"scatter", name:"Inflation index", line:{width:6, color:"black"}}];
+    Plotly.react("plotMain", traces, commonLayout("Inflation index","I(t)"), {displayModeBar:false, responsive:true});
+  }
+  else if (selectedPlot === "mu_nom"){
+    setPdfControlsVisible(false);
+    if (!muNom) { Plotly.purge("plotMain"); return; }
+    const traces = [{x:t, y:smoothSeries(muNom, t), type:"scatter", name:"Average income", line:{width:6, color:"black"}}];
+    Plotly.react("plotMain", traces, commonLayout("Nominal mean income","£ (nominal/yr)"), {displayModeBar:false, responsive:true});
+  }
+  else if (selectedPlot === "lambda"){
+    setPdfControlsVisible(false);
+    if (!lam) { Plotly.purge("plotMain"); return; }
+
+    const y = smoothSeries(lam, t);
+    const yMin = Math.min(...y);
+    const yMax = Math.max(...y);
+    const pad = 0.05 * (yMax - yMin || Math.max(Math.abs(yMax), 1e-8));
+
+    const layout = commonLayout("Redistribution factor", "");
+    layout.yaxis.exponentformat = "e";
+    layout.yaxis.showexponent = "all";
+    layout.yaxis.tickformat = ".1e";
+    layout.yaxis.range = [yMin - pad, yMax + pad];
+    layout.margin.l = 110;
+
+    layout.annotations = (layout.annotations || []).concat([
+      {
+        text: "λ(t)",
+        xref: "paper",
+        yref: "paper",
+        x: -0.06,
+        y: 1.06,
+        showarrow: false,
+        font: { size: 18 },
+        align: "center"
+      }
+    ]);
+
+    const traces = [{ x:t, y, type:"scatter", name:"λ(t)", line:{width:6, color:"black"} }];
+    Plotly.react("plotMain", traces, layout, {displayModeBar:false, responsive:true});
+  }
+  else if (selectedPlot === "palma"){
+    setPdfControlsVisible(false);
+    const yB = bauData.palma_ratio;
+    const yS = hasScenarioData ? scenarioData.palma_ratio : null;
+    if (!yB) { Plotly.purge("plotMain"); return; }
+
+    const traces = [{x:t, y:smoothSeries(yB, t), type:"scatter", name:"BAU", line:{width:6, color:"black"}}];
+    if (yS) traces.push({x:t, y:smoothSeries(yS, t), type:"scatter", name:"Scenario", line:{width:6}});
+    Plotly.react("plotMain", traces, commonLayout("Palma ratio","R(t)"), {displayModeBar:false, responsive:true});
+  }
+  else if (selectedPlot === "gini"){
+    setPdfControlsVisible(false);
+    const yB = bauData.gini_coefficient;
+    const yS = hasScenarioData ? scenarioData.gini_coefficient : null;
+    if (!yB) { Plotly.purge("plotMain"); return; }
+
+    const layout = commonLayout("Gini coefficient","G(t)");
+    layout.yaxis.range = [0, 1];
+
+    const traces = [{x:t, y:smoothSeries(yB, t), type:"scatter", name:"BAU", line:{width:6, color:"black"}}];
+    if (yS) traces.push({x:t, y:smoothSeries(yS, t), type:"scatter", name:"Scenario", line:{width:6}});
+    Plotly.react("plotMain", traces, layout, {displayModeBar:false, responsive:true});
+  }
+
+  /* ===========================
+     NEW: Food price index
+  =========================== */
+  else if (selectedPlot === "food_price"){
+    setPdfControlsVisible(false);
+    const yB = bauData.food_price_index;
+    const yS = hasScenarioData ? scenarioData.food_price_index : null;
+    if (!yB) { Plotly.purge("plotMain"); return; }
+
+    const traces = [{x:t, y:smoothSeries(yB, t), type:"scatter", name:"BAU", line:{width:6, color:"black"}}];
+    if (yS) traces.push({x:t, y:smoothSeries(yS, t), type:"scatter", name:"Scenario", line:{width:6}});
+    Plotly.react("plotMain", traces, commonLayout("Food price index","£/yr (real)"), {displayModeBar:false, responsive:true});
+  }
+
+  /* ===========================
+     NEW: Food security index
+  =========================== */
+  else if (selectedPlot === "food_sec"){
+    setPdfControlsVisible(false);
+    const yB = bauData.food_security_index;
+    const yS = hasScenarioData ? scenarioData.food_security_index : null;
+    if (!yB) { Plotly.purge("plotMain"); return; }
+
+    const traces = [{x:t, y:smoothSeries(yB, t), type:"scatter", name:"BAU", line:{width:6, color:"black"}}];
+    if (yS) traces.push({x:t, y:smoothSeries(yS, t), type:"scatter", name:"Scenario", line:{width:6}});
+    Plotly.react("plotMain", traces, commonLayout("Food security index","Z(t) = Q/x20"), {displayModeBar:false, responsive:true});
+  }
+
+  else if (selectedPlot === "inc_pdf"){
+    if (!incX || !incPDF || !incPDF.length) {
+      setPdfControlsVisible(false);
+      Plotly.purge("plotMain");
+      return;
+    }
+
+    setupPdfSlider();
+    setPdfControlsVisible(true);
+
+    incomePdfState = { t, x: incX, pdf: incPDF };
+
+    const slider = el("pdfTime");
+    slider.min = "0";
+    slider.max = String(Math.max(0, t.length - 1));
+    slider.step = "1";
+    slider.value = "0";
+    el("pdfTimeLabel").textContent = `t = ${(+t[0]).toFixed(2)}`;
+
+    const pdfTrace = {
+      x: incX,
+      y: incPDF[0],
+      type: "scatter",
+      mode: "lines",
+      name: "Income PDF",
+      line: { width: 5 , color: "black"}
+    };
+
+    const layout = {
+      title: { text: "Income distribution", font: { size: 26 } },
+      margin: { l: 70, r: 10, t: 58, b: 36 },
+      paper_bgcolor: "rgba(0,0,0,0)",
+      plot_bgcolor: "rgba(0,0,0,0)",
+      xaxis: { range: [0, 150000], showline: true, linewidth: 3, linecolor: "#222", tickfont: { size: 16 }, title: { text: "Income (£/yr)", font: { size: 16 } } },
+      yaxis: { showline: true, linewidth: 3, linecolor: "#222", tickfont: { size: 16 }, title: { text: "Density", font: { size: 16 } } },
+      legend: { font: { size: 18 }, orientation: "h", y: -0.35 }
+    };
+
+    Plotly.react("plotMain", [pdfTrace], layout, {displayModeBar:false, responsive:true});
+  }
 
   setTimeout(() => {
     Plotly.Plots.resize("plotSoil");
@@ -1374,7 +1688,7 @@ function triggerSim(){
 }
 
 // global sliders
-["tmax","pop","n"].forEach((id) => el(id).addEventListener("input", triggerSim));
+["tmax","pop","n","muGrow","infl","lamRate"].forEach((id) => el(id).addEventListener("input", triggerSim));
 
 // rolling controls
 el("rollOn").addEventListener("change", triggerSim);

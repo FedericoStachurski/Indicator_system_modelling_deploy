@@ -37,18 +37,41 @@ def run_simulation(req: SimRequest) -> SimResponse:
 
         lands.append(LandConfig(**d))
 
+    # ---- Macro initial conditions + income PDF grid params ----
+    initial_population = getattr(req, "initial_population", 5_000_000.0)
+    initial_income = getattr(req, "initial_income", 36_203.15)
+    initial_inflation_index = getattr(req, "initial_inflation_index", 1.0)
+    initial_redistribution_factor = getattr(req, "initial_redistribution_factor", 7.786169e-5)
+    redistribution_rate = getattr(req, "redistribution_rate", 0.0)
+
+    income_x_max_mult = getattr(req, "income_x_max_mult", 10.0)
+    income_nx = getattr(req, "income_nx", 400)
+
     res = simulate_multi_land(
         lands=lands,
         T_max=req.T_max,
         n_points=req.n_points,
+
+        # macro rates
         population_growth_rate=req.population_growth_rate,
         income_growth_rate=req.income_growth_rate,
         inflation_rate=req.inflation_rate,
 
+        # macro initials
+        initial_population=initial_population,
+        initial_income=initial_income,
+        initial_inflation_index=initial_inflation_index,
+        initial_redistribution_factor=initial_redistribution_factor,
+        redistribution_rate=redistribution_rate,
+
+        # income pdf grid
+        income_x_max_mult=income_x_max_mult,
+        income_nx=income_nx,
+
         # land area
         total_land_area=req.total_land_area,
 
-        # IMPORTANT: names must match soil_model_core.simulate_multi_land signature
+        # emissions defaults
         E_H_default=req.E_H_default,
         E_S_default=req.E_S_default,
     )
@@ -78,4 +101,22 @@ def run_simulation(req: SimRequest) -> SimResponse:
 
         total_emissions=res.total_emissions.tolist() if res.total_emissions is not None else None,
         emissions_by_land=res.emissions_by_land.tolist() if res.emissions_by_land is not None else None,
+
+        # --- macro series exposed for plotting ---
+        inflation_index=res.inflation_index.tolist() if res.inflation_index is not None else None,
+        average_nominal_income=res.average_nominal_income.tolist() if res.average_nominal_income is not None else None,
+        redistribution_lambda=res.redistribution_lambda.tolist() if res.redistribution_lambda is not None else None,
+
+        # --- inequality indices ---
+        palma_ratio=res.palma_ratio.tolist() if res.palma_ratio is not None else None,
+        gini_coefficient=res.gini_coefficient.tolist() if res.gini_coefficient is not None else None,
+
+        # --- food price + food security ---
+        food_price_index=res.food_price_index.tolist() if res.food_price_index is not None else None,
+        income_x20=res.income_x20.tolist() if res.income_x20 is not None else None,
+        food_security_index=res.food_security_index.tolist() if res.food_security_index is not None else None,
+
+        # --- income distribution ---
+        income_x=res.income_x.tolist() if res.income_x is not None else None,
+        income_pdf=res.income_pdf.tolist() if res.income_pdf is not None else None,
     )

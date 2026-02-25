@@ -19,7 +19,6 @@ class LandIn(BaseModel):
         ge=0.0,
         description="Intensive farming emission factor (tCO₂eq/(ha·yr))"
     )
-    # allow negative if you want “net removal” under cover crops
     E_S: float = Field(
         default=1.28,
         description="Cover crop / fallow emission factor (tCO₂eq/(ha·yr))"
@@ -46,16 +45,28 @@ class SimRequest(BaseModel):
     T_max: float
     n_points: int
 
+    # macro rates
     population_growth_rate: float = 0.01
     income_growth_rate: float = 0.014
     inflation_rate: float = 0.017
 
-    # NEW: total land area used to convert per-ha rates -> totals
+    # macro initial conditions (income distribution)
+    initial_population: float = Field(default=5_000_000.0, gt=0.0)
+    initial_income: float = Field(default=36_203.15, gt=0.0)  # nominal mean income (£/yr)
+    initial_inflation_index: float = Field(default=1.0, gt=0.0)
+    initial_redistribution_factor: float = Field(default=7.786169e-5, gt=0.0)
+    redistribution_rate: float = Field(default=0.0)
+
+    # income PDF grid settings
+    income_x_max_mult: float = Field(default=10.0, gt=0.0)
+    income_nx: int = Field(default=400, ge=50, le=5000)
+
+    # land area
     total_land_area: float = Field(default=560_000.0, gt=0.0, description="Total land area (hectares)")
 
-    # Optional: global fallback emissions factors (used only if land E_H/E_S missing)
-    E_H_default: float = Field(default=1.6, ge=0.0, description="Default cultivation emission factor (tCO₂eq/(ha·yr))")
-    E_S_default: float = Field(default=1.28, description="Default cover emission factor (tCO₂eq/(ha·yr))")
+    # global fallback emissions factors
+    E_H_default: float = Field(default=1.6, ge=0.0)
+    E_S_default: float = Field(default=1.28)
 
     lands: list[LandIn]
 
@@ -89,3 +100,21 @@ class SimResponse(BaseModel):
     # emissions outputs (tCO2eq/yr)
     total_emissions: Optional[list[float]] = None
     emissions_by_land: Optional[list[list[float]]] = None
+
+    # --- macro series exposed for plotting ---
+    inflation_index: Optional[list[float]] = None
+    average_nominal_income: Optional[list[float]] = None
+    redistribution_lambda: Optional[list[float]] = None
+
+    # --- inequality indices ---
+    palma_ratio: Optional[list[float]] = None
+    gini_coefficient: Optional[list[float]] = None
+
+    # --- food price + food security ---
+    food_price_index: Optional[list[float]] = None      # Q(t) £/yr (real)
+    income_x20: Optional[list[float]] = None            # x20(t) £/yr
+    food_security_index: Optional[list[float]] = None   # Z(t) = Q(t)/x20(t)
+
+    # --- income distribution ---
+    income_x: Optional[list[float]] = None
+    income_pdf: Optional[list[list[float]]] = None
