@@ -165,7 +165,7 @@ class LandConfig:
     # Farming mode
     omega: int = 1
     tau: int = 0
-    phase: float = 0.0
+    phase: float = 1.0
 
     # Per-land emissions factors (tCO2eq/(ha*yr))
     E_H: Optional[float] = None
@@ -204,7 +204,7 @@ class SimulationResult:
     # --- NEW: food price + food security ---
     food_price_index: Optional[np.ndarray] = None       # Q(t) £/yr (real)
     income_x20: Optional[np.ndarray] = None             # x20(t) £/yr
-    food_security_index: Optional[np.ndarray] = None    # Z(t) = Q/x20
+    food_insecurity_index: Optional[np.ndarray] = None    # Z(t) = Q/x20
 
     harvest_per_land: Optional[np.ndarray] = None
     total_harvest: Optional[np.ndarray] = None
@@ -267,6 +267,15 @@ def _average_income_ODE(mu_nom: float, income_growth_rate: float) -> float:
 
 def _redistribution_factor_ODE(lam: float, redistribution_rate: float) -> float:
     return redistribution_rate * lam
+
+def rolling_mean(a, window):
+    a = np.asarray(a, dtype=float)
+    windows = np.lib.stride_tricks.sliding_window_view(a, window)
+    means = windows.mean(axis=-1)
+    pad_left = window // 2
+    pad_right = window - pad_left - 1
+
+    return np.pad(means, (pad_left, pad_right), mode='edge')
 
 
 def all_ODEs(
@@ -479,8 +488,11 @@ def simulate_multi_land(
     gini = np.clip(gini, 0.0, 1.0)
 
     # ---- self sufficiency ratio ----
+    temp_cycle_rolling = T_max
     calorie_demand = population * float(calorie_per_person)
-    calorie_production = total_production * float(calories_per_unit)
+    rolling_total_production = rolling_mean(total_production, int(temp_cycle_rolling))
+    #np.convolve(total_production, np.ones(int(temp_cycle_rolling)) / float(temp_cycle_rolling), mode='same')  # Tmax-years rolling average for stability
+    calorie_production = rolling_total_production * float(calories_per_unit) #TODO: CHANGE THIS
     self_sufficiency_ratio = 100.0 * (calorie_production / np.maximum(calorie_demand, 1e-12))  # %
 
     # ---- affordability index (older version, unchanged) ---
@@ -491,11 +503,12 @@ def simulate_multi_land(
     
     denom_Q = np.maximum(self_sufficiency_ratio * inflation_index, 1e-12)
     food_price_index = betaQ / denom_Q  # £/yr (real)
-    food_price_index = np.clip(food_price_index, 0.0, 50_000.0) #TODO CHANGE this NOT CORRECT
+    # food_price_index = np.clip(food_price_index, 0.0, 50_000.0) #TODO CHANGE this NOT CORRECT
 
     income_x20 = gamma.ppf(0.20, a=k_shape, scale=scale)  # £/yr
-    food_security_index = food_price_index / np.maximum(income_x20, 1e-12)  # fraction of income
-    food_security_index = np.clip(food_security_index, 0.0, 2.0)         #TODO CHANGE this NOT CORRECT
+    # print(income_x20, food_price_index)
+    food_insecurity_index = food_price_index / np.maximum(income_x20, 1e-12)  # fraction of income
+ 
 
     # ---- weighted soil ----
     if land_fractions_arr.sum() > 0:
@@ -555,7 +568,7 @@ def simulate_multi_land(
         # NEW: food indices
         food_price_index=food_price_index,
         income_x20=income_x20,
-        food_security_index=food_security_index,
+        food_insecurity_index=food_insecurity_index,
 
         harvest_per_land=harvest_per_land,
         total_harvest=total_harvest,

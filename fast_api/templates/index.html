@@ -292,7 +292,7 @@
 
           <!-- NEW: food indicators -->
           <option value="food_price">Food price index</option>
-          <option value="food_sec">Food security index</option>
+          <option value="food_insec">Food insecurity index</option>
 
           <!-- distribution plot -->
           <option value="inc_pdf">Income distribution (PDF)</option>
@@ -456,7 +456,7 @@ const SIGN = {
   harvest:+1,
   emis: -1,
   food_price: -1,
-  food_sec:   -1,
+  food_insec:   -1,
 };
 
 function mean(arr){
@@ -585,7 +585,7 @@ const BAU_LAND = {
 
   omega: 3,
   tau: 1,
-  phase: 0.0,
+  phase: 1.0,
 
   EH: 1.6,
   ES: 1.28,
@@ -1039,12 +1039,12 @@ const commonLayout = (title, ytitle) => ({
 });
 
 function renderDonutWithHeat(values){
-  // UPDATED: include Palma + Gini + Food price + Food security
+  // UPDATED: include Palma + Gini + Food price + Food insecurity
   const labels = [
     "Soil health","Production","Population","Self-sufficiency",
     "Real income","Affordability","Degradation","Price","Harvest",
     "Total emissions",
-    "Food price index","Food security index"
+    "Food price index","Food insecurity index"
   ];
 
   const cmapName = scenarios[activeScenario]?.globals?.donutCmap || "Viridis";
@@ -1353,8 +1353,8 @@ async function runSim(){
   const bau_food_price = bauData.food_price_index;
   const sc_food_price  = hasScenarioData ? scenarioData.food_price_index : bau_food_price;
 
-  const bau_food_sec = bauData.food_security_index;
-  const sc_food_sec  = hasScenarioData ? scenarioData.food_security_index : bau_food_sec;
+  const bau_food_insec = bauData.food_insecurity_index;
+  const sc_food_insec  = hasScenarioData ? scenarioData.food_insecurity_index : bau_food_insec;
 
   const donutValues = [
     signedPctImprovementEnd(sc_soil,  bau_soil,  SIGN.soil),
@@ -1370,7 +1370,7 @@ async function runSim(){
 
     // NEW: food donut entries
     signedPctImprovementEnd(sc_food_price, bau_food_price, SIGN.food_price),
-    signedPctImprovementEnd(sc_food_sec,   bau_food_sec,   SIGN.food_sec),
+    signedPctImprovementEnd(sc_food_insec,   bau_food_insec,   SIGN.food_insec),
   ].map(v => clamp(v, DONUT_CMIN, DONUT_CMAX));
 
   renderDonutWithHeat(donutValues);
@@ -1434,7 +1434,7 @@ async function runSim(){
 
   // NEW: food series
   const foodPrice = hasScenarioData ? scenarioData.food_price_index : bauData.food_price_index;
-  const foodSec   = hasScenarioData ? scenarioData.food_security_index : bauData.food_security_index;
+  const foodInsec   = hasScenarioData ? scenarioData.food_insecurity_index : bauData.food_insecurity_index;
 
   // Secondary plot routing
   if (selectedPlot === "prod"){
@@ -1620,15 +1620,15 @@ async function runSim(){
   /* ===========================
      NEW: Food security index
   =========================== */
-  else if (selectedPlot === "food_sec"){
+  else if (selectedPlot === "food_insec"){
     setPdfControlsVisible(false);
-    const yB = bauData.food_security_index;
-    const yS = hasScenarioData ? scenarioData.food_security_index : null;
+    const yB = bauData.food_insecurity_index;
+    const yS = hasScenarioData ? scenarioData.food_insecurity_index : null;
     if (!yB) { Plotly.purge("plotMain"); return; }
 
     const traces = [{x:t, y:smoothSeries(yB, t), type:"scatter", name:"BAU", line:{width:6, color:"black"}}];
     if (yS) traces.push({x:t, y:smoothSeries(yS, t), type:"scatter", name:"Scenario", line:{width:6}});
-    Plotly.react("plotMain", traces, commonLayout("Food security index","Z(t) = Q/x20"), {displayModeBar:false, responsive:true});
+    Plotly.react("plotMain", traces, commonLayout("Food insecurity index","Z(t) = Q/x20"), {displayModeBar:false, responsive:true});
   }
 
   else if (selectedPlot === "inc_pdf"){

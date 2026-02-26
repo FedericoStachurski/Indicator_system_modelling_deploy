@@ -113,7 +113,7 @@ class SimResponse(BaseModel):
     # --- food price + food security ---
     food_price_index: Optional[list[float]] = None      # Q(t) £/yr (real)
     income_x20: Optional[list[float]] = None            # x20(t) £/yr
-    food_security_index: Optional[list[float]] = None   # Z(t) = Q(t)/x20(t)
+    food_insecurity_index: Optional[list[float]] = None   # Z(t) = Q(t)/x20(t)
 
     # --- income distribution ---
     income_x: Optional[list[float]] = None
