@@ -1628,7 +1628,7 @@ async function runSim(){
 
     const traces = [{x:t, y:smoothSeries(yB, t), type:"scatter", name:"BAU", line:{width:6, color:"black"}}];
     if (yS) traces.push({x:t, y:smoothSeries(yS, t), type:"scatter", name:"Scenario", line:{width:6}});
-    Plotly.react("plotMain", traces, commonLayout("Food insecurity index","Z(t) = Q/x20"), {displayModeBar:false, responsive:true});
+    Plotly.react("plotMain", traces, commonLayout("Food insecurity index","Index (%)"), {displayModeBar:false, responsive:true});
   }
 
   else if (selectedPlot === "inc_pdf"){
@@ -1661,7 +1661,7 @@ async function runSim(){
 
     const layout = {
       title: { text: "Income distribution", font: { size: 26 } },
-      margin: { l: 70, r: 10, t: 58, b: 36 },
+      margin: { l: 70, r: 10, t: 58, b: 56 },
       paper_bgcolor: "rgba(0,0,0,0)",
       plot_bgcolor: "rgba(0,0,0,0)",
       xaxis: { range: [0, 150000], showline: true, linewidth: 3, linecolor: "#222", tickfont: { size: 16 }, title: { text: "Income (£/yr)", font: { size: 16 } } },

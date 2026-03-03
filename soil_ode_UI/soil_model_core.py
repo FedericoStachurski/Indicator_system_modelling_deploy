@@ -261,7 +261,7 @@ def _inflation_index_ODE(I: float, inflation_rate: float) -> float:
     return inflation_rate * I
 
 
-def _average_income_ODE(mu_nom: float, income_growth_rate: float) -> float:
+def _average_income_ODE(mu_nom: float, income_growth_rate: float) -> float: #TODO: This is REAL Income Modelling 
     return income_growth_rate * mu_nom
 
 
@@ -449,7 +449,7 @@ def simulate_multi_land(
     inflation_index = sol_all.y[2]
     lam_series = sol_all.y[3]
 
-    average_real_income = mu_nominal / np.maximum(inflation_index, 1e-12)
+    average_real_income = mu_nominal #/ np.maximum(inflation_index, 1e-12)
 
     # ---- enforce alpha = mu_real*lambda > 1 ----
     mu_real = np.maximum(average_real_income, 1e-12)
@@ -494,11 +494,12 @@ def simulate_multi_land(
     #np.convolve(total_production, np.ones(int(temp_cycle_rolling)) / float(temp_cycle_rolling), mode='same')  # Tmax-years rolling average for stability
     calorie_production = rolling_total_production * float(calories_per_unit) #TODO: CHANGE THIS
     self_sufficiency_ratio = 100.0 * (calorie_production / np.maximum(calorie_demand, 1e-12))  # %
+    
 
     # ---- affordability index (older version, unchanged) ---
     Q0 = 5_000.0
     I0 = 1.0
-    SSR0 = 100.0
+    SSR0 = self_sufficiency_ratio[0] 
     betaQ = Q0 * SSR0 * I0
     
     denom_Q = np.maximum(self_sufficiency_ratio * inflation_index, 1e-12)
@@ -507,7 +508,7 @@ def simulate_multi_land(
 
     income_x20 = gamma.ppf(0.20, a=k_shape, scale=scale)  # £/yr
     # print(income_x20, food_price_index)
-    food_insecurity_index = food_price_index / np.maximum(income_x20, 1e-12)  # fraction of income
+    food_insecurity_index = 100*food_price_index / np.maximum(income_x20, 1e-12)  # fraction of income
  
 
     # ---- weighted soil ----
