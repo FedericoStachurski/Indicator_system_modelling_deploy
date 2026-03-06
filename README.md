@@ -1,7 +1,7 @@
 # Indicator Modelling
 
 <p align="center">
-  <img src="fast_api/static/logos/Media_986283_smxx.png" alt="Indicator Modelling logo" width="300">
+  <img src="fast_api/static/logos/Media_986283_smxx.png" alt="Indicator Modelling logo" width="800">
 </p>
 
 System dynamics modelling framework for exploring interactions between Glasgow Thriving Place indicators.
