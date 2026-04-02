@@ -340,20 +340,18 @@
           <option value="none" selected>(show only Soil)</option>
           <option value="prod">Production</option>
           <option value="pop">Population</option>
+          <option value="cal_demand">Calorie demand</option>
           <option value="ssr">Self-sufficiency</option>
           <option value="inc">Real income</option>
-          <option value="aff">Affordability index</option>
           <option value="deg">Degradation</option>
-          <option value="price">Price</option>
           <option value="harvest">Harvest</option>
           <option value="emis">Emissions</option>
           <option value="infl">Inflation index</option>
-          <option value="mu_nom">Nominal income</option>
-          <option value="lambda">Redistribution λ</option>
+          <option value="lambda">Redistribution factor</option>
           <option value="palma">Palma ratio</option>
           <option value="gini">Gini coefficient</option>
           <option value="food_price">Food price index</option>
-          <option value="food_insec">Food insecurity index</option>
+          <option value="food_sec">Food security</option>
           <option value="inc_pdf">Income distribution (PDF)</option>
         </select>
 
@@ -422,7 +420,7 @@
 
           <div class="row">
             <div class="labelrow"><span><b>Income growth (δμ)</b></span><span id="muGrowLabel" class="small"></span></div>
-            <input id="muGrow" type="range" min="0" max="0.05" step="0.001" value="0.014">
+            <input id="muGrow" type="range" min="0" max="0.05" step="0.001" value="0.005">
           </div>
 
           <div class="row">
@@ -432,7 +430,7 @@
 
           <div class="row">
             <div class="labelrow"><span><b>Redistribution rate (δλ)</b></span><span id="lamRateLabel" class="small"></span></div>
-            <input id="lamRate" type="range" min="-0.2" max="0.2" step="0.005" value="0.001">
+            <input id="lamRate" type="range" min="-0.2" max="0.2" step="0.005" value="0.00">
           </div>
 
           <div class="row">
@@ -516,15 +514,14 @@ const SIGN = {
   soil: +1,
   prod: +1,
   pop:  +1,
+  cal_demand: -1,
   ssr:  +1,
   inc:  +1,
-  aff:  +1,
   deg:  -1,
-  price:-1,
   harvest:+1,
   emis: -1,
   food_price: -1,
-  food_insec: -1,
+  food_sec: +1,
 };
 
 function mean(arr){
@@ -1142,9 +1139,9 @@ function smallLayout(title, ytitle){
 
 function renderDonutWithHeat(values){
   const labels = [
-    "Soil health","Production","Population","Self-sufficiency",
-    "Real income","Affordability","Degradation","Price","Harvest",
-    "Total emissions","Food price index","Food insecurity index"
+    "Soil health","Production","Population","Calorie demand",
+    "Self-sufficiency","Real income","Degradation",
+    "Harvest","Total emissions","Food price index","Food security"
   ];
 
   const cmapName = scenarios[activeScenario]?.globals?.donutCmap || "Viridis";
@@ -1281,6 +1278,14 @@ function makeMiniPlotCard(id){
   `;
 }
 
+function getFoodPriceSeries(data){
+  return data?.food_price_index ?? null;
+}
+
+function getFoodSecuritySeries(data){
+  return data?.food_security_index ?? data?.food_insecurity_index ?? null;
+}
+
 function renderAllPlots(data){
   const {
     t,
@@ -1294,29 +1299,32 @@ function renderAllPlots(data){
 
   const grid = el("allPlotsGrid");
 
+  const bauFoodPrice = getFoodPriceSeries(bauData);
+  const scFoodPrice = hasScenarioData ? getFoodPriceSeries(scenarioData) : null;
+  const bauFoodSec = getFoodSecuritySeries(bauData);
+  const scFoodSec = hasScenarioData ? getFoodSecuritySeries(scenarioData) : null;
+
   const plotDefs = [
     { key: "soil" },
     { key: "prod" },
     { key: "pop" },
+    { key: "cal_demand" },
     { key: "ssr" },
     { key: "inc" },
-    { key: "aff" },
     { key: "deg" },
-    { key: "price" },
     { key: "harvest" },
     { key: "emis" },
     { key: "infl" },
-    { key: "mu_nom" },
     { key: "lambda" },
     { key: "palma" },
     { key: "gini" },
     { key: "food_price" },
-    { key: "food_insec" }
+    { key: "food_sec" }
   ];
 
-  if (incX && incPDF && incPDF.length){
-    plotDefs.push({ key: "inc_pdf" });
-  }
+  if (bauFoodPrice) plotDefs.push({ key: "food_price" });
+  if (bauFoodSec) plotDefs.push({ key: "food_sec" });
+  if (incX && incPDF && incPDF.length) plotDefs.push({ key: "inc_pdf" });
 
   grid.innerHTML = plotDefs.map(p => makeMiniPlotCard(`mini_${p.key}`)).join("");
 
@@ -1377,6 +1385,16 @@ function renderAllPlots(data){
 
   {
     const obj = baseTwoTrace(
+      smoothSeries(bauData.food_consumption, t),
+      hasScenarioData ? smoothSeries(scenarioData.food_consumption, t) : null,
+      "Calorie demand",
+      "kcal/yr"
+    );
+    Plotly.react("mini_cal_demand", obj.traces, obj.layout, {displayModeBar:false, responsive:true});
+  }
+
+  {
+    const obj = baseTwoTrace(
       smoothSeries(bauData.self_sufficiency_ratio, t),
       hasScenarioData ? smoothSeries(scenarioData.self_sufficiency_ratio, t) : null,
       "Self-sufficiency",
@@ -1390,19 +1408,9 @@ function renderAllPlots(data){
       smoothSeries(bauData.average_real_income, t),
       hasScenarioData ? smoothSeries(scenarioData.average_real_income, t) : null,
       "Real income",
-      "£ (real)"
+      "£/yr"
     );
     Plotly.react("mini_inc", obj.traces, obj.layout, {displayModeBar:false, responsive:true});
-  }
-
-  {
-    const obj = baseTwoTrace(
-      smoothSeries(bauData.affordability_index, t),
-      hasScenarioData ? smoothSeries(scenarioData.affordability_index, t) : null,
-      "Affordability",
-      "Index"
-    );
-    Plotly.react("mini_aff", obj.traces, obj.layout, {displayModeBar:false, responsive:true});
   }
 
   {
@@ -1421,16 +1429,6 @@ function renderAllPlots(data){
       }
     }
     Plotly.react("mini_deg", traces, smallLayout("Degradation", "D"), {displayModeBar:false, responsive:true});
-  }
-
-  if (bauData.price && el("mini_price")){
-    const obj = baseTwoTrace(
-      smoothSeries(bauData.price, t),
-      hasScenarioData && scenarioData.price ? smoothSeries(scenarioData.price, t) : null,
-      "Price",
-      "p"
-    );
-    Plotly.react("mini_price", obj.traces, obj.layout, {displayModeBar:false, responsive:true});
   }
 
   if (bauData.total_harvest && el("mini_harvest")){
@@ -1464,15 +1462,6 @@ function renderAllPlots(data){
       "mini_infl",
       [{ x:t, y:smoothSeries(hasScenarioData ? scenarioData.inflation_index : bauData.inflation_index, t), type:"scatter", name:"Inflation", line:{width:3, color:"black"} }],
       smallLayout("Inflation index", "I(t)"),
-      {displayModeBar:false, responsive:true}
-    );
-  }
-
-  if (bauData.average_nominal_income && el("mini_mu_nom")){
-    Plotly.react(
-      "mini_mu_nom",
-      [{ x:t, y:smoothSeries(hasScenarioData ? scenarioData.average_nominal_income : bauData.average_nominal_income, t), type:"scatter", name:"Nominal income", line:{width:3, color:"black"} }],
-      smallLayout("Nominal income", "£ (nominal/yr)"),
       {displayModeBar:false, responsive:true}
     );
   }
@@ -1513,24 +1502,24 @@ function renderAllPlots(data){
     Plotly.react("mini_gini", obj.traces, obj.layout, {displayModeBar:false, responsive:true});
   }
 
-  if (bauData.food_price_index && el("mini_food_price")){
+  if (bauFoodPrice && el("mini_food_price")){
     const obj = baseTwoTrace(
-      smoothSeries(bauData.food_price_index, t),
-      hasScenarioData ? smoothSeries(scenarioData.food_price_index, t) : null,
+      smoothSeries(bauFoodPrice, t),
+      scFoodPrice ? smoothSeries(scFoodPrice, t) : null,
       "Food price index",
-      "£/yr (real)"
+      "£"
     );
     Plotly.react("mini_food_price", obj.traces, obj.layout, {displayModeBar:false, responsive:true});
   }
 
-  if (bauData.food_insecurity_index && el("mini_food_insec")){
+  if (bauFoodSec && el("mini_food_sec")){
     const obj = baseTwoTrace(
-      smoothSeries(bauData.food_insecurity_index, t),
-      hasScenarioData ? smoothSeries(scenarioData.food_insecurity_index, t) : null,
-      "Food insecurity",
-      "Index (%)"
+      smoothSeries(bauFoodSec, t),
+      scFoodSec ? smoothSeries(scFoodSec, t) : null,
+      "Food security",
+      "Index"
     );
-    Plotly.react("mini_food_insec", obj.traces, obj.layout, {displayModeBar:false, responsive:true});
+    Plotly.react("mini_food_sec", obj.traces, obj.layout, {displayModeBar:false, responsive:true});
   }
 
   if (incX && incPDF && incPDF.length && el("mini_inc_pdf")){
@@ -1857,10 +1846,9 @@ async function runSim(){
 
   const sc_prod  = hasScenarioData ? scenarioData.total_production : bauData.total_production;
   const sc_pop   = hasScenarioData ? scenarioData.population : bauData.population;
+  const sc_cal_demand = hasScenarioData ? scenarioData.food_consumption : bauData.food_consumption;
   const sc_ssr   = hasScenarioData ? scenarioData.self_sufficiency_ratio : bauData.self_sufficiency_ratio;
   const sc_inc   = hasScenarioData ? scenarioData.average_real_income : bauData.average_real_income;
-  const sc_aff   = hasScenarioData ? scenarioData.affordability_index : bauData.affordability_index;
-  const sc_price = hasScenarioData ? scenarioData.price : bauData.price;
   const sc_harv  = hasScenarioData ? scenarioData.total_harvest : bauData.total_harvest;
 
   const bau_emis = bauData.total_emissions;
@@ -1872,25 +1860,24 @@ async function runSim(){
   const bau_gini = bauData.gini_coefficient;
   const sc_gini  = hasScenarioData ? scenarioData.gini_coefficient : bau_gini;
 
-  const bau_food_price = bauData.food_price_index;
-  const sc_food_price  = hasScenarioData ? scenarioData.food_price_index : bau_food_price;
+  const bau_food_price = getFoodPriceSeries(bauData);
+  const sc_food_price  = hasScenarioData ? getFoodPriceSeries(scenarioData) : bau_food_price;
 
-  const bau_food_insec = bauData.food_insecurity_index;
-  const sc_food_insec  = hasScenarioData ? scenarioData.food_insecurity_index : bau_food_insec;
+  const bau_food_sec = getFoodSecuritySeries(bauData);
+  const sc_food_sec  = hasScenarioData ? getFoodSecuritySeries(scenarioData) : bau_food_sec;
 
   const donutValues = [
     signedPctImprovementEnd(sc_soil,  bau_soil,  SIGN.soil),
     signedPctImprovementEnd(sc_prod,  bauData.total_production, SIGN.prod),
     signedPctImprovementEnd(sc_pop,   bauData.population, SIGN.pop),
+    signedPctImprovementEnd(sc_cal_demand, bauData.food_consumption, SIGN.cal_demand),
     signedPctImprovementEnd(sc_ssr,   bauData.self_sufficiency_ratio, SIGN.ssr),
     signedPctImprovementEnd(sc_inc,   bauData.average_real_income, SIGN.inc),
-    signedPctImprovementEnd(sc_aff,   bauData.affordability_index, SIGN.aff),
     signedPctImprovementEnd(sc_deg,   bau_deg, SIGN.deg),
-    signedPctImprovementEnd(sc_price, bauData.price, SIGN.price),
     signedPctImprovementEnd(sc_harv,  bauData.total_harvest, SIGN.harvest),
     signedPctImprovementEnd(sc_emis,  bau_emis, SIGN.emis),
     signedPctImprovementEnd(sc_food_price, bau_food_price, SIGN.food_price),
-    signedPctImprovementEnd(sc_food_insec, bau_food_insec, SIGN.food_insec),
+    signedPctImprovementEnd(sc_food_sec, bau_food_sec, SIGN.food_sec),
   ].map(v => clamp(v, DONUT_CMIN, DONUT_CMAX));
 
   renderDonutWithHeat(donutValues);
@@ -1956,6 +1943,16 @@ async function runSim(){
     });
 
     visiblePlots.push({
+      key: "cal_demand",
+      title: "Calorie demand",
+      x: t.slice(),
+      series: [
+        { name: "BAU", y: smoothSeries(bauData.food_consumption, t).slice() },
+        ...(hasScenarioData ? [{ name: "Scenario", y: smoothSeries(scenarioData.food_consumption, t).slice() }] : [])
+      ]
+    });
+
+    visiblePlots.push({
       key: "ssr",
       title: "Self-sufficiency",
       x: t.slice(),
@@ -1976,16 +1973,6 @@ async function runSim(){
     });
 
     visiblePlots.push({
-      key: "aff",
-      title: "Affordability",
-      x: t.slice(),
-      series: [
-        { name: "BAU", y: smoothSeries(bauData.affordability_index, t).slice() },
-        ...(hasScenarioData ? [{ name: "Scenario", y: smoothSeries(scenarioData.affordability_index, t).slice() }] : [])
-      ]
-    });
-
-    visiblePlots.push({
       key: "deg",
       title: "Degradation",
       x: t.slice(),
@@ -1999,18 +1986,6 @@ async function runSim(){
           : [])
       ]
     });
-
-    if (bauData.price){
-      visiblePlots.push({
-        key: "price",
-        title: "Price",
-        x: t.slice(),
-        series: [
-          { name: "BAU", y: smoothSeries(bauData.price, t).slice() },
-          ...(hasScenarioData && scenarioData.price ? [{ name: "Scenario", y: smoothSeries(scenarioData.price, t).slice() }] : [])
-        ]
-      });
-    }
 
     if (bauData.total_harvest){
       visiblePlots.push({
@@ -2043,17 +2018,6 @@ async function runSim(){
         x: t.slice(),
         series: [
           { name: "Inflation", y: smoothSeries(hasScenarioData ? scenarioData.inflation_index : bauData.inflation_index, t).slice() }
-        ]
-      });
-    }
-
-    if (bauData.average_nominal_income){
-      visiblePlots.push({
-        key: "mu_nom",
-        title: "Nominal income",
-        x: t.slice(),
-        series: [
-          { name: "Nominal income", y: smoothSeries(hasScenarioData ? scenarioData.average_nominal_income : bauData.average_nominal_income, t).slice() }
         ]
       });
     }
@@ -2093,26 +2057,26 @@ async function runSim(){
       });
     }
 
-    if (bauData.food_price_index){
+    if (bau_food_price){
       visiblePlots.push({
         key: "food_price",
         title: "Food price index",
         x: t.slice(),
         series: [
-          { name: "BAU", y: smoothSeries(bauData.food_price_index, t).slice() },
-          ...(hasScenarioData ? [{ name: "Scenario", y: smoothSeries(scenarioData.food_price_index, t).slice() }] : [])
+          { name: "BAU", y: smoothSeries(bau_food_price, t).slice() },
+          ...(sc_food_price ? [{ name: "Scenario", y: smoothSeries(sc_food_price, t).slice() }] : [])
         ]
       });
     }
 
-    if (bauData.food_insecurity_index){
+    if (bau_food_sec){
       visiblePlots.push({
-        key: "food_insec",
-        title: "Food insecurity",
+        key: "food_sec",
+        title: "Food security",
         x: t.slice(),
         series: [
-          { name: "BAU", y: smoothSeries(bauData.food_insecurity_index, t).slice() },
-          ...(hasScenarioData ? [{ name: "Scenario", y: smoothSeries(scenarioData.food_insecurity_index, t).slice() }] : [])
+          { name: "BAU", y: smoothSeries(bau_food_sec, t).slice() },
+          ...(sc_food_sec ? [{ name: "Scenario", y: smoothSeries(sc_food_sec, t).slice() }] : [])
         ]
       });
     }
@@ -2132,10 +2096,9 @@ async function runSim(){
 
     setTimeout(() => {
       const ids = [
-        "mini_soil","mini_prod","mini_pop","mini_ssr","mini_inc","mini_aff",
-        "mini_deg","mini_price","mini_harvest","mini_emis","mini_infl",
-        "mini_mu_nom","mini_lambda","mini_palma","mini_gini",
-        "mini_food_price","mini_food_insec","mini_inc_pdf"
+        "mini_soil","mini_prod","mini_pop","mini_cal_demand","mini_ssr","mini_inc",
+        "mini_deg","mini_harvest","mini_emis","mini_infl","mini_lambda",
+        "mini_palma","mini_gini","mini_food_price","mini_food_sec","mini_inc_pdf"
       ];
       ids.forEach(id => {
         const node = document.getElementById(id);
@@ -2212,7 +2175,6 @@ async function runSim(){
   showSecondary(true);
 
   const infl = hasScenarioData ? scenarioData.inflation_index : bauData.inflation_index;
-  const muNom = hasScenarioData ? scenarioData.average_nominal_income : bauData.average_nominal_income;
   const lam = hasScenarioData ? scenarioData.redistribution_lambda : bauData.redistribution_lambda;
 
   const incX = hasScenarioData ? scenarioData.income_x : bauData.income_x;
@@ -2243,6 +2205,13 @@ async function runSim(){
     Plotly.react("plotMain", traces, commonLayout("Population","People"), {displayModeBar:false, responsive:true});
     lastRenderState.visiblePlots.push({ key:"pop", title:"Population", x:t.slice(), series: traces.map(tr => ({ name: tr.name, y: tr.y.slice() })) });
   }
+    else if (selectedPlot === "cal_demand"){
+    setPdfControlsVisible(false);
+    const traces = [{x:t, y: smoothSeries(bauData.food_consumption, t), type:"scatter", name:"BAU", line:{width:6, color:"black"}}];
+    if (hasScenarioData) traces.push({x:t, y: smoothSeries(scenarioData.food_consumption, t), type:"scatter", name:"Scenario", line:{width:6}});
+    Plotly.react("plotMain", traces, commonLayout("Calorie demand","kcal/yr"), {displayModeBar:false, responsive:true});
+    lastRenderState.visiblePlots.push({ key:"cal_demand", title:"Calorie demand", x:t.slice(), series: traces.map(tr => ({ name: tr.name, y: tr.y.slice() })) });
+  }
   else if (selectedPlot === "ssr"){
     setPdfControlsVisible(false);
     const traces = [{x:t, y: smoothSeries(bauData.self_sufficiency_ratio, t), type:"scatter", name:"BAU", line:{width:6, color:"black"}}];
@@ -2257,13 +2226,6 @@ async function runSim(){
     Plotly.react("plotMain", traces, commonLayout("Real income","£ (real)"), {displayModeBar:false, responsive:true});
     lastRenderState.visiblePlots.push({ key:"inc", title:"Real income", x:t.slice(), series: traces.map(tr => ({ name: tr.name, y: tr.y.slice() })) });
   }
-  else if (selectedPlot === "aff"){
-    setPdfControlsVisible(false);
-    const traces = [{x:t, y: smoothSeries(bauData.affordability_index, t), type:"scatter", name:"BAU", line:{width:6, color:"black"}}];
-    if (hasScenarioData) traces.push({x:t, y: smoothSeries(scenarioData.affordability_index, t), type:"scatter", name:"Scenario", line:{width:6}});
-    Plotly.react("plotMain", traces, commonLayout("Affordability","Index"), {displayModeBar:false, responsive:true});
-    lastRenderState.visiblePlots.push({ key:"aff", title:"Affordability", x:t.slice(), series: traces.map(tr => ({ name: tr.name, y: tr.y.slice() })) });
-  }
   else if (selectedPlot === "deg"){
     setPdfControlsVisible(false);
     const traces = [{x:t, y: bauData.degradations[0], type:"scatter", name:"BAU", line:{width:6, color:"black"}}];
@@ -2274,14 +2236,6 @@ async function runSim(){
     }
     Plotly.react("plotMain", traces, commonLayout("Degradation D(t)","D"), {displayModeBar:false, responsive:true});
     lastRenderState.visiblePlots.push({ key:"deg", title:"Degradation D(t)", x:t.slice(), series: traces.map(tr => ({ name: tr.name, y: tr.y.slice() })) });
-  }
-  else if (selectedPlot === "price"){
-    setPdfControlsVisible(false);
-    if (!bauData.price) { Plotly.purge("plotMain"); return; }
-    const traces = [{x:t, y: smoothSeries(bauData.price, t), type:"scatter", name:"BAU", line:{width:6, color:"black"}}];
-    if (hasScenarioData && scenarioData.price) traces.push({x:t, y: smoothSeries(scenarioData.price, t), type:"scatter", name:"Scenario", line:{width:6}});
-    Plotly.react("plotMain", traces, commonLayout("Price","p"), {displayModeBar:false, responsive:true});
-    lastRenderState.visiblePlots.push({ key:"price", title:"Price", x:t.slice(), series: traces.map(tr => ({ name: tr.name, y: tr.y.slice() })) });
   }
   else if (selectedPlot === "harvest"){
     setPdfControlsVisible(false);
@@ -2336,13 +2290,6 @@ async function runSim(){
     const traces = [{x:t, y:smoothSeries(infl, t), type:"scatter", name:"Inflation index", line:{width:6, color:"black"}}];
     Plotly.react("plotMain", traces, commonLayout("Inflation index","I(t)"), {displayModeBar:false, responsive:true});
     lastRenderState.visiblePlots.push({ key:"infl", title:"Inflation index", x:t.slice(), series: traces.map(tr => ({ name: tr.name, y: tr.y.slice() })) });
-  }
-  else if (selectedPlot === "mu_nom"){
-    setPdfControlsVisible(false);
-    if (!muNom) { Plotly.purge("plotMain"); return; }
-    const traces = [{x:t, y:smoothSeries(muNom, t), type:"scatter", name:"Average income", line:{width:6, color:"black"}}];
-    Plotly.react("plotMain", traces, commonLayout("Nominal mean income","£ (nominal/yr)"), {displayModeBar:false, responsive:true});
-    lastRenderState.visiblePlots.push({ key:"mu_nom", title:"Nominal mean income", x:t.slice(), series: traces.map(tr => ({ name: tr.name, y: tr.y.slice() })) });
   }
   else if (selectedPlot === "lambda"){
     setPdfControlsVisible(false);
@@ -2410,19 +2357,19 @@ async function runSim(){
 
     const traces = [{x:t, y:smoothSeries(yB, t), type:"scatter", name:"BAU", line:{width:6, color:"black"}}];
     if (yS) traces.push({x:t, y:smoothSeries(yS, t), type:"scatter", name:"Scenario", line:{width:6}});
-    Plotly.react("plotMain", traces, commonLayout("Food price index","£/yr (real)"), {displayModeBar:false, responsive:true});
+    Plotly.react("plotMain", traces, commonLayout("Food price index","£"), {displayModeBar:false, responsive:true});
     lastRenderState.visiblePlots.push({ key:"food_price", title:"Food price index", x:t.slice(), series: traces.map(tr => ({ name: tr.name, y: tr.y.slice() })) });
   }
-  else if (selectedPlot === "food_insec"){
+  else if (selectedPlot === "food_sec"){
     setPdfControlsVisible(false);
-    const yB = bauData.food_insecurity_index;
-    const yS = hasScenarioData ? scenarioData.food_insecurity_index : null;
+    const yB = bauData.food_security_index;
+    const yS = hasScenarioData ? scenarioData.food_security_index : null;
     if (!yB) { Plotly.purge("plotMain"); return; }
 
     const traces = [{x:t, y:smoothSeries(yB, t), type:"scatter", name:"BAU", line:{width:6, color:"black"}}];
     if (yS) traces.push({x:t, y:smoothSeries(yS, t), type:"scatter", name:"Scenario", line:{width:6}});
-    Plotly.react("plotMain", traces, commonLayout("Food insecurity index","Index (%)"), {displayModeBar:false, responsive:true});
-    lastRenderState.visiblePlots.push({ key:"food_insec", title:"Food insecurity index", x:t.slice(), series: traces.map(tr => ({ name: tr.name, y: tr.y.slice() })) });
+    Plotly.react("plotMain", traces, commonLayout("Food security index","Index"), {displayModeBar:false, responsive:true});
+    lastRenderState.visiblePlots.push({ key:"food_sec", title:"Food security index", x:t.slice(), series: traces.map(tr => ({ name: tr.name, y: tr.y.slice() })) });
   }
   else if (selectedPlot === "inc_pdf"){
     if (!incX || !incPDF || !incPDF.length) {
@@ -2522,10 +2469,10 @@ runSim();
 window.addEventListener("resize", () => {
   if (allPlotsMode){
     const ids = [
-      "mini_soil","mini_prod","mini_pop","mini_ssr","mini_inc","mini_aff",
-      "mini_deg","mini_price","mini_harvest","mini_emis","mini_infl",
-      "mini_mu_nom","mini_lambda","mini_palma","mini_gini",
-      "mini_food_price","mini_food_insec","mini_inc_pdf"
+      "mini_soil","mini_prod","mini_pop","mini_cal_demand","mini_ssr","mini_inc",
+      "mini_deg","mini_harvest","mini_emis","mini_infl",
+      "mini_lambda","mini_palma","mini_gini",
+      "mini_food_price","mini_food_sec","mini_inc_pdf"
     ];
     ids.forEach(id => {
       const node = document.getElementById(id);

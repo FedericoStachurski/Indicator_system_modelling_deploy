@@ -87,36 +87,32 @@ def run_simulation(req: SimRequest) -> SimResponse:
         production_by_land=res.productions.tolist(),
 
         population=res.population.tolist(),
+        food_consumption=res.food_consumption.tolist(),
         self_sufficiency_ratio=res.self_sufficiency_ratio.tolist(),
         average_real_income=res.average_real_income.tolist(),
-        affordability_index=res.affordability_index.tolist(),
 
         degradations=res.degradations.tolist(),
 
         total_harvest=res.total_harvest.tolist() if res.total_harvest is not None else None,
         harvest_per_land=res.harvest_per_land.tolist() if res.harvest_per_land is not None else None,
 
-        price=res.price.tolist() if res.price is not None else None,
-        affordability=res.affordability.tolist() if res.affordability is not None else None,
-
         total_emissions=res.total_emissions.tolist() if res.total_emissions is not None else None,
         emissions_by_land=res.emissions_by_land.tolist() if res.emissions_by_land is not None else None,
 
         # --- macro series exposed for plotting ---
         inflation_index=res.inflation_index.tolist() if res.inflation_index is not None else None,
-        average_nominal_income=res.average_nominal_income.tolist() if res.average_nominal_income is not None else None,
         redistribution_lambda=res.redistribution_lambda.tolist() if res.redistribution_lambda is not None else None,
 
         # --- inequality indices ---
         palma_ratio=res.palma_ratio.tolist() if res.palma_ratio is not None else None,
         gini_coefficient=res.gini_coefficient.tolist() if res.gini_coefficient is not None else None,
 
-        # --- food price + food security ---
-        food_price_index=res.food_price_index.tolist() if res.food_price_index is not None else None,
         income_x20=res.income_x20.tolist() if res.income_x20 is not None else None,
-        food_insecurity_index=res.food_insecurity_index.tolist() if res.food_insecurity_index is not None else None,
 
         # --- income distribution ---
         income_x=res.income_x.tolist() if res.income_x is not None else None,
         income_pdf=res.income_pdf.tolist() if res.income_pdf is not None else None,
+    
+        food_price_index=res.food_price_index.tolist() if res.food_price_index is not None else None,
+        food_security_index=res.food_security_index.tolist() if res.food_security_index is not None else None,
     )

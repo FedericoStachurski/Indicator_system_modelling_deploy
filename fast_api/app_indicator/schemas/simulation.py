@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
-from pydantic import BaseModel, Field, model_validator
+from typing import Any, Dict, List, Optional
+from pydantic import BaseModel, Field
 
 
 class LandIn(BaseModel):
@@ -9,112 +9,83 @@ class LandIn(BaseModel):
     alpha: float
     S0: float
     scenario_name: str
-    deg_params: Dict[str, Any]
+    deg_params: Dict[str, Any] = Field(default_factory=dict)
     land_fraction: float
     P_max: float
 
-    # per-land emissions factors (tCO2eq/(ha*yr))
-    E_H: float = Field(
-        default=1.68,
-        ge=0.0,
-        description="Intensive farming emission factor (tCO₂eq/(ha·yr))"
-    )
-    E_S: float = Field(
-        default=1.28,
-        description="Cover crop / fallow emission factor (tCO₂eq/(ha·yr))"
-    )
-
-    # cultivation pulse B(t)
-    omega: int = Field(default=1, ge=1, description="Cycle length (years)")
-    tau: int = Field(default=0, ge=0, description="Cover-crop duration (years), must be <= omega")
-    phase: float = Field(default=0.0, ge=0.0, description="Phase shift (years)")
-
-    recovery_name: str = Field(default="Constant alpha")
+    recovery_name: Optional[str] = "Constant alpha"
     recovery_params: Dict[str, Any] = Field(default_factory=dict)
 
-    model_config = {"extra": "ignore"}
+    omega: int = 1
+    tau: int = 0
+    phase: float = 0.0
 
-    @model_validator(mode="after")
-    def _check_tau_le_omega(self):
-        if self.tau > self.omega:
-            raise ValueError(f"tau ({self.tau}) must be <= omega ({self.omega})")
-        return self
+    E_H: Optional[float] = None
+    E_S: Optional[float] = None
 
 
 class SimRequest(BaseModel):
-    T_max: float
-    n_points: int
+    lands: List[LandIn]
+
+    T_max: float = 50.0
+    n_points: int = 500
 
     # macro rates
     population_growth_rate: float = 0.01
-    income_growth_rate: float = 0.014
-    inflation_rate: float = 0.017
+    income_growth_rate: float = 0.005
+    inflation_rate: float = 0.027
 
-    # macro initial conditions (income distribution)
-    initial_population: float = Field(default=5_000_000.0, gt=0.0)
-    initial_income: float = Field(default=36_203.15, gt=0.0)  # nominal mean income (£/yr)
-    initial_inflation_index: float = Field(default=1.0, gt=0.0)
-    initial_redistribution_factor: float = Field(default=7.786169e-5, gt=0.0)
-    redistribution_rate: float = Field(default=0.0)
+    # macro initial conditions
+    initial_population: float = 5_000_000.0
+    initial_income: float = 36_203.15
+    initial_inflation_index: float = 1.0
+    initial_redistribution_factor: float = 7.786169e-5
+    redistribution_rate: float = -0.001
 
-    # income PDF grid settings
-    income_x_max_mult: float = Field(default=10.0, gt=0.0)
-    income_nx: int = Field(default=400, ge=50, le=5000)
+    # income pdf grid
+    income_x_max_mult: float = 10.0
+    income_nx: int = 400
 
     # land area
-    total_land_area: float = Field(default=560_000.0, gt=0.0, description="Total land area (hectares)")
+    total_land_area: float = 560_000.0
 
-    # global fallback emissions factors
-    E_H_default: float = Field(default=1.6, ge=0.0)
-    E_S_default: float = Field(default=1.28)
-
-    lands: list[LandIn]
+    # emissions defaults
+    E_H_default: float = 1.5
+    E_S_default: float = 1.17
 
 
 class SimResponse(BaseModel):
-    t: list[float]
-    weighted_soil: list[float]
-    soils: list[list[float]]
-    alphas: list[float]
-    land_names: list[str]
+    t: List[float]
+    weighted_soil: List[float]
+    soils: List[List[float]]
+    land_names: List[str]
+    alphas: List[float]
 
-    # tonnes/yr
-    total_production: list[float]
-    production_by_land: list[list[float]]
+    total_production: List[float]
+    production_by_land: List[List[float]]
 
-    population: list[float]
-    self_sufficiency_ratio: list[float]
-    average_real_income: list[float]
-    affordability_index: list[float]
+    population: List[float]
+    food_consumption: List[float]
+    self_sufficiency_ratio: List[float]
+    average_real_income: List[float]
 
-    degradations: list[list[float]]
+    degradations: List[List[float]]
 
-    # tonnes/yr
-    total_harvest: Optional[list[float]] = None
-    harvest_per_land: Optional[list[list[float]]] = None
+    total_harvest: Optional[List[float]] = None
+    harvest_per_land: Optional[List[List[float]]] = None
 
-    # optional econ outputs
-    price: Optional[list[float]] = None
-    affordability: Optional[list[float]] = None
+    total_emissions: Optional[List[float]] = None
+    emissions_by_land: Optional[List[List[float]]] = None
 
-    # emissions outputs (tCO2eq/yr)
-    total_emissions: Optional[list[float]] = None
-    emissions_by_land: Optional[list[list[float]]] = None
+    inflation_index: Optional[List[float]] = None
+    redistribution_lambda: Optional[List[float]] = None
 
-    # --- macro series exposed for plotting ---
-    inflation_index: Optional[list[float]] = None
-    average_nominal_income: Optional[list[float]] = None
-    redistribution_lambda: Optional[list[float]] = None
+    palma_ratio: Optional[List[float]] = None
+    gini_coefficient: Optional[List[float]] = None
 
-    # --- inequality indices ---
-    palma_ratio: Optional[list[float]] = None
-    gini_coefficient: Optional[list[float]] = None
+    income_x20: Optional[List[float]] = None
 
-    # --- food price + food security ---
-    food_price_index: Optional[list[float]] = None      # Q(t) £/yr (real)
-    income_x20: Optional[list[float]] = None            # x20(t) £/yr
-    food_insecurity_index: Optional[list[float]] = None   # Z(t) = Q(t)/x20(t)
-
-    # --- income distribution ---
-    income_x: Optional[list[float]] = None
-    income_pdf: Optional[list[list[float]]] = None
+    income_x: Optional[List[float]] = None
+    income_pdf: Optional[List[List[float]]] = None
+    food_price_index: Optional[List[float]] = None
+    food_security_index: Optional[List[float]] = None
