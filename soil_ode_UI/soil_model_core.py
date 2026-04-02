@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional
 
 import numpy as np
+from scipy import signal
 from scipy.integrate import solve_ivp
 from scipy.stats import gamma
 from scipy.special import gammaln  # stable log-gamma for analytic Gini
@@ -19,38 +20,87 @@ from scipy.special import gammaln  # stable log-gamma for analytic Gini
 # Farming Modes
 # ------------------------------------------------------------
 
-def B_pulse_train(
-    t: float,
-    omega: int,
-    tau: int = 1,
-    phase: float = 0.0,
-    eps: float = 1e-10
-) -> float:
+# def B_pulse_train(
+#     t: float,
+#     omega: int,
+#     tau: int = 1,
+#     phase: float = 0.0,
+#     eps: float = 1e-10
+# ) -> float:
+#     """
+#     Pulse train for farming mode (cash crops vs cover crops).
+
+#     B(t) in {0,1}
+#       - B(t) = 0 during cover-crop window of length tau at start of each cycle
+#       - B(t) = 1 otherwise (cash crops)
+
+#     General implemented form:
+#       B_i(t)=0 if t in [k*omega + phase, k*omega + phase + tau), else 1
+#     """
+#     omega = int(omega)
+#     tau = int(tau)
+
+#     if omega <= 0:
+#         return 1.0
+#     if tau <= 0:
+#         return 1.0
+#     if tau >= omega:
+#         return 0.0
+#     if t < 0:
+#         return 1.0  # pre-cycle, assume cash crops
+
+#     cycle_time = (t - phase) % omega
+#     return 0.0 if (cycle_time < tau - eps) else 1.0
+
+
+def B_pulse_train(t, omega=5.0, tau=1.5, phase=0.0, amp = 1.0):
     """
-    Pulse train for farming mode (cash crops vs cover crops).
+    Trapezoidal wave for farming state.
 
-    B(t) in {0,1}
-      - B(t) = 0 during cover-crop window of length tau at start of each cycle
-      - B(t) = 1 otherwise (cash crops)
+    Parameters
+    ----------
+    t : array-like
+    omega : period
+    tau : duration of LOW state (cover crop)
+    phase : phase shift
+    amp : amplitude (default 1)
 
-    General implemented form:
-      B_i(t)=0 if t in [k*omega + phase, k*omega + phase + tau), else 1
+    Returns
+    -------
+    signal in [0, amp]
     """
-    omega = int(omega)
-    tau = int(tau)
 
-    if omega <= 0:
-        return 1.0
-    if tau <= 0:
-        return 1.0
-    if tau >= omega:
-        return 0.0
-    if t < 0:
-        return 1.0  # pre-cycle, assume cash crops
+    t_shift = t - phase
+    cycle = np.mod(t_shift, omega)
 
-    cycle_time = (t - phase) % omega
-    return 0.0 if (cycle_time < tau - eps) else 1.0
+    ramp = min(tau * 0.25, omega * 0.25)
 
+    y = np.zeros_like(cycle, dtype=float)
+
+    # Regions (STRICT, no overlap)
+
+    # 1. LOW plateau
+    mask_low = cycle < (tau - ramp)
+
+    # 2. RISING edge
+    mask_rise = (cycle >= (tau - ramp)) & (cycle < tau)
+
+    # 3. HIGH plateau
+    mask_high = (cycle >= tau) & (cycle < (omega - ramp))
+
+    # 4. FALLING edge
+    mask_fall = cycle >= (omega - ramp)
+
+    # Assign values
+    y[mask_low] = 0.0
+
+    y[mask_rise] = amp * (cycle[mask_rise] - (tau - ramp)) / ramp
+
+    y[mask_high] = amp
+
+    y[mask_fall] = amp * (1 - (cycle[mask_fall] - (omega - ramp)) / ramp)
+
+    return y
 
 # ------------------------------------------------------------
 # Degradation functions
