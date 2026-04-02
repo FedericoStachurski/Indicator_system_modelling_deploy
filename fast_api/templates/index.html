@@ -2234,8 +2234,8 @@ async function runSim(){
         traces.push({x:t, y: scenarioData.degradations[i], type:"scatter", name:scenarioData.land_names[i], line:{width:6}});
       }
     }
-    Plotly.react("plotMain", traces, commonLayout("Degradation D(t)","D"), {displayModeBar:false, responsive:true});
-    lastRenderState.visiblePlots.push({ key:"deg", title:"Degradation D(t)", x:t.slice(), series: traces.map(tr => ({ name: tr.name, y: tr.y.slice() })) });
+    Plotly.react("plotMain", traces, commonLayout("Degradation","D"), {displayModeBar:false, responsive:true});
+    lastRenderState.visiblePlots.push({ key:"deg", title:"Degradation", x:t.slice(), series: traces.map(tr => ({ name: tr.name, y: tr.y.slice() })) });
   }
   else if (selectedPlot === "harvest"){
     setPdfControlsVisible(false);
