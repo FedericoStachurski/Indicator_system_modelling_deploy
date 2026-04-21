@@ -402,7 +402,7 @@ def simulate_multi_land(
 
     # production / demand conversion
     harvest_fraction: float = 1.0,
-    calories_per_unit: float = 1_100_000,
+    calories_per_unit: float = 255_000,
     calorie_per_person: float = 700_000,
 
     # land area
@@ -417,7 +417,7 @@ def simulate_multi_land(
         raise ValueError("simulate_multi_land: need at least one LandConfig")
 
     n_lands = len(lands)
-    t_eval = np.linspace(0.0, T_max, int(n_points))
+    t_eval = np.linspace(0.0, T_max, int(n_points*T_max))
 
     soils = np.zeros((n_lands, t_eval.size))
     degradations = np.zeros((n_lands, t_eval.size))
@@ -576,6 +576,8 @@ def simulate_multi_land(
     rolling_total_production = rolling_mean(total_production, temp_cycle_rolling)
     calorie_production = rolling_total_production * float(calories_per_unit)
 
+
+
     self_sufficiency_ratio = 100.0 * (
         calorie_production / np.maximum(food_consumption, 1e-12)
     )
@@ -590,10 +592,15 @@ def simulate_multi_land(
     income_x20 = gamma.ppf(0.20, a=k_shape, scale=scale)
 
     # ---- food price index Q(t) ----
-    food_price_index = food_consumption / np.maximum(calorie_production, 1e-12)
+    Q_0 = 5000 # baseline price index
+    R_0 = 120 # baseline self-sufficiency ratio (%)
+    I_0 = 1.0 # baseline inflation index
+    beta_q = Q_0 * R_0 * I_0
+    # food_price_index = beta_q *  food_consumption / (np.maximum(inflation_index, 1e-12)*np.maximum(calorie_production, 1e-12))
+    food_price_index = beta_q * 1 /(np.maximum(self_sufficiency_ratio, 1e-12) * np.maximum(inflation_index, 1e-12))
 
     # ---- food security index Z(t) ----
-    food_security_index = food_price_index / np.maximum(income_x20, 1e-12)
+    food_security_index = 100 * food_price_index / np.maximum(income_x20, 1e-12)
 
     # ---- weighted soil ----
     if land_fractions_arr.sum() > 0:
