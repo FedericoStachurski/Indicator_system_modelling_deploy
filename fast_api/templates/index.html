@@ -352,7 +352,7 @@
           <option value="ssr">Self-sufficiency</option>
           <option value="inc">Real income</option>
           <option value="deg">Degradation</option>
-          <option value="harvest">Harvest</option>
+          <!-- <option value="harvest">Harvest</option> -->
           <option value="emis">Emissions</option>
           <option value="infl">Inflation index</option>
           <option value="lambda">Redistribution factor</option>
@@ -398,7 +398,7 @@
         <div class="side-card">
           <div class="side-title">Indicator system</div>
           <div id="plotDonut" class="donut"></div>
-          <div class="side-note">Signed % change vs BAU (end state).</div>
+          <div class="side-note">Signed % change vs Baseline (time average).</div>
         </div>
       </div>
     </div>
@@ -438,7 +438,7 @@
 
           <div class="row">
             <div class="labelrow"><span><b>Redistribution rate (δλ)</b></span><span id="lamRateLabel" class="small"></span></div>
-            <input id="lamRate" type="range" min="-0.2" max="0.2" step="0.005" value="0.00">
+            <input id="lamRate" type="range" min="-0.2" max="0.2" step="0.005" value="0.01">
           </div>
 
           <div class="row">
@@ -461,7 +461,7 @@
 
           <div class="row">
             <div class="labelrow">
-              <span><b>Donut heatmap palette</b></span>
+              <span><b>Doughnut heatmap palette</b></span>
               <span id="cmapLabel" class="small"></span>
             </div>
             <select id="donutCmap">
@@ -487,9 +487,9 @@
           </div>
 
           <div class="small" style="margin-top:6px;">
-            <b>Business as usual</b> is always included as a fixed baseline (not editable).
+            <b>Baseline</b> is always included as a fixed baseline (not editable).
             <br>
-            BAU emissions factors fixed: <b>E_H = 1.6</b>, <b>E_S = 1.28</b> tCO₂eq/(ha·yr)
+            Baseline emissions factors fixed: <b>E_H = 1.6</b>, <b>E_S = 1.28</b> tCO₂eq/(ha·yr)
           </div>
 
           <div id="landsContainer" class="grid-controls" style="grid-template-columns: 1fr 1fr; margin-top:8px;"></div>
@@ -515,18 +515,18 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape") overlay.cl
 
 // ---------- Donut: signed % improvements ----------
 const EPS = 1e-9;
-const DONUT_CMIN = -50;
-const DONUT_CMAX = +50;
+const DONUT_CMIN = -100;
+const DONUT_CMAX = +100;
 
 const SIGN = {
   soil: +1,
   prod: +1,
-  pop:  +1,
-  cal_demand: -1,
+  // pop:  +1,
+  // cal_demand: -1,
   ssr:  +1,
-  inc:  +1,
+  // inc:  +1,
   deg:  -1,
-  harvest:+1,
+  // harvest:+1,
   emis: -1,
   food_price: -1,
   food_sec: +1,
@@ -548,6 +548,24 @@ function signedPctImprovementEnd(seriesScenario, seriesBAU, sign=+1){
   const xb = last(seriesBAU);
   const pct = 100 * (xs - xb) / (Math.abs(xb) + EPS);
   return sign * pct;
+}
+
+function signedPctImprovementAverage(seriesScenario, seriesBAU, sign=+1){
+  if (!seriesScenario || !seriesBAU) return 0;
+
+  let sum = 0;
+  const n = Math.min(seriesScenario.length, seriesBAU.length);
+
+  for (let i = 0; i < n; i++){
+    const xs = seriesScenario[i];
+    const xb = seriesBAU[i];
+
+    sum += (xs - xb) / (Math.abs(xb) + EPS);
+  }
+
+  const avgPct = 100 * sum / n;
+
+  return sign * avgPct;
 }
 function clamp(x, a, b){ return Math.max(a, Math.min(b, x)); }
 
@@ -634,15 +652,15 @@ function fmtPct(v){
 }
 
 /* =========================
-   BAU BASELINE (FIXED)
+   BASELINE (FIXED)
 ========================= */
 const BAU_LAND = {
-  name: "Business as usual",
+  name: "Baseline",
   share: 100,
 
   alpha: 0.20,
   s0: 0.80,
-  recovery: "Constant alpha",
+  recovery: "Logistic alpha(S)",
   alpha_max: 0.25,
   sT: 0.20,
   rho: 50,
@@ -836,7 +854,7 @@ function renderLands(){
     msg.style.gridColumn = "1 / -1";
     msg.innerHTML = `
       <h4>No scenario lands yet</h4>
-      <div class="small">Click <b>+ Add land</b> to add an intervention land. BAU baseline will remain in the plots.</div>
+      <div class="small">Click <b>+ Add land</b> to add an intervention land. Baseline baseline will remain in the plots.</div>
     `;
     container.appendChild(msg);
     refreshScenarioSelect();
@@ -1147,9 +1165,9 @@ function smallLayout(title, ytitle){
 
 function renderDonutWithHeat(values){
   const labels = [
-    "Soil health","Production","Population","Calorie demand",
-    "Self-sufficiency","Real income","Degradation",
-    "Harvest","Total emissions","Food price index","Food security"
+    "Soil health","Production", // "Population","Calorie demand", "Real income",
+    "Self-sufficiency","Degradation",
+    "Total emissions","Food price index","Food security"
   ];
 
   const cmapName = scenarios[activeScenario]?.globals?.donutCmap || "Viridis";
@@ -1168,7 +1186,7 @@ function renderDonutWithHeat(values){
     fontsize: 46,
     automargin: true,
     marker: { colors, line: { color: "black", width: 4 } },
-    hovertemplate: "%{label}<br>%{text} vs BAU<extra></extra>",
+    hovertemplate: "%{label}<br>%{text} vs Baseline<extra></extra>",
     showlegend: false,
     sort: false,
     direction: "clockwise",
@@ -1188,7 +1206,7 @@ function renderDonutWithHeat(values){
       showscale: true,
       colorbar: {
         orientation: "h",
-        title: { text: "% δ vs BAU", side: "bottom" },
+        title: { text: "% δ vs Baseline", side: "bottom" },
         thickness: 14,
         len: 0.85,
         y: -.1
@@ -1320,7 +1338,7 @@ function renderAllPlots(data){
     { key: "ssr" },
     { key: "inc" },
     { key: "deg" },
-    { key: "harvest" },
+    // { key: "harvest" },
     { key: "emis" },
     { key: "infl" },
     { key: "lambda" },
@@ -1338,7 +1356,7 @@ function renderAllPlots(data){
 
   function baseTwoTrace(bauY, scY, title, ytitle, opts = {}){
     const traces = [
-      { x:t, y: bauY, type:"scatter", name:"BAU", line:{width:3, color:"black"} }
+      { x:t, y: bauY, type:"scatter", name:"Baseline", line:{width:3, color:"black"} }
     ];
     if (scY) traces.push({ x:t, y: scY, type:"scatter", name:"Scenario", line:{width:3} });
 
@@ -1355,7 +1373,7 @@ function renderAllPlots(data){
 
   {
     const traces = [
-      { x:t, y:smoothSeries(bauData.soils[0], t), type:"scatter", name:"BAU", line:{width:3, color:"black"} }
+      { x:t, y:smoothSeries(bauData.soils[0], t), type:"scatter", name:"Baseline", line:{width:3, color:"black"} }
     ];
     if (hasScenarioData){
       for (let i=0; i<scenarioData.land_names.length; i++){
@@ -1373,7 +1391,7 @@ function renderAllPlots(data){
 
   {
     const traces = [
-      { x:t, y:smoothSeries(bauData.total_production, t), type:"scatter", name:"BAU total", line:{width:3, color:"black"} }
+      { x:t, y:smoothSeries(bauData.total_production, t), type:"scatter", name:"Baseline total", line:{width:3, color:"black"} }
     ];
     if (hasScenarioData){
       traces.push({ x:t, y:smoothSeries(scenarioData.total_production, t), type:"scatter", name:"Scenario total", line:{width:3, dash:"dot"} });
@@ -1423,7 +1441,7 @@ function renderAllPlots(data){
 
   {
     const traces = [
-      { x:t, y:bauData.degradations[0], type:"scatter", name:"BAU", line:{width:3, color:"black"} }
+      { x:t, y:bauData.degradations[0], type:"scatter", name:"Baseline", line:{width:3, color:"black"} }
     ];
     if (hasScenarioData){
       for (let i=0; i<scenarioData.land_names.length; i++){
@@ -1439,19 +1457,19 @@ function renderAllPlots(data){
     Plotly.react("mini_deg", traces, smallLayout("Degradation", "D"), {displayModeBar:false, responsive:true});
   }
 
-  if (bauData.total_harvest && el("mini_harvest")){
-    const obj = baseTwoTrace(
-      smoothSeries(bauData.total_harvest, t),
-      hasScenarioData && scenarioData.total_harvest ? smoothSeries(scenarioData.total_harvest, t) : null,
-      "Harvest",
-      "Tonnes/yr"
-    );
-    Plotly.react("mini_harvest", obj.traces, obj.layout, {displayModeBar:false, responsive:true});
-  }
+  // if (bauData.total_harvest && el("mini_harvest")){
+  //   const obj = baseTwoTrace(
+  //     smoothSeries(bauData.total_harvest, t),
+  //     hasScenarioData && scenarioData.total_harvest ? smoothSeries(scenarioData.total_harvest, t) : null,
+  //     "Harvest",
+  //     "Tonnes/yr"
+  //   );
+  //   Plotly.react("mini_harvest", obj.traces, obj.layout, {displayModeBar:false, responsive:true});
+  // }
 
   if (bauData.total_emissions && el("mini_emis")){
     const traces = [
-      { x:t, y:smoothSeries(bauData.total_emissions, t), type:"scatter", name:"BAU total", line:{width:3, color:"black"} }
+      { x:t, y:smoothSeries(bauData.total_emissions, t), type:"scatter", name:"Baseline total", line:{width:3, color:"black"} }
     ];
     if (hasScenarioData && scenarioData.total_emissions){
       traces.push({
@@ -1602,7 +1620,7 @@ function rowsToCsv(rows){
 function buildVisibleRowsForCsv(){
   if (!lastRenderState || !lastRenderState.visiblePlots) return [];
 
-  const rows = [];
+  const rowsByTime = new Map();
   const plots = lastRenderState.visiblePlots;
 
   for (const plot of plots){
@@ -1613,22 +1631,29 @@ function buildVisibleRowsForCsv(){
       const y = s.y || [];
       const n = Math.min(x.length, y.length);
 
+      // Safe column name
+      const colName = `${plot.key}_${s.name}`
+        .replace(/\s+/g, "_")
+        .replace(/[^\w]/g, "");
+
       for (let i = 0; i < n; i++){
-        rows.push({
-          scenario_name: scenarios[activeScenario]?.name || `Scenario ${activeScenario+1}`,
-          mode: allPlotsMode ? "all_plots" : "single_plot",
-          selected_plot: selectedPlot,
-          plot_key: plot.key,
-          plot_title: plot.title,
-          series_name: s.name,
-          time: x[i],
-          value: y[i]
-        });
+        const time = x[i];
+
+        if (!rowsByTime.has(time)){
+          rowsByTime.set(time, {
+            scenario_name: scenarios[activeScenario]?.name || `Scenario ${activeScenario+1}`,
+            mode: allPlotsMode ? "all_plots" : "single_plot",
+            selected_plot: selectedPlot,
+            time: time
+          });
+        }
+
+        rowsByTime.get(time)[colName] = y[i];
       }
     }
   }
 
-  return rows;
+  return Array.from(rowsByTime.values());
 }
 
 function exportVisibleCsv(){
@@ -1875,17 +1900,17 @@ async function runSim(){
   const sc_food_sec  = hasScenarioData ? getFoodSecuritySeries(scenarioData) : bau_food_sec;
 
   const donutValues = [
-    signedPctImprovementEnd(sc_soil,  bau_soil,  SIGN.soil),
-    signedPctImprovementEnd(sc_prod,  bauData.total_production, SIGN.prod),
-    signedPctImprovementEnd(sc_pop,   bauData.population, SIGN.pop),
-    signedPctImprovementEnd(sc_cal_demand, bauData.food_consumption, SIGN.cal_demand),
-    signedPctImprovementEnd(sc_ssr,   bauData.self_sufficiency_ratio, SIGN.ssr),
-    signedPctImprovementEnd(sc_inc,   bauData.average_real_income, SIGN.inc),
-    signedPctImprovementEnd(sc_deg,   bau_deg, SIGN.deg),
-    signedPctImprovementEnd(sc_harv,  bauData.total_harvest, SIGN.harvest),
-    signedPctImprovementEnd(sc_emis,  bau_emis, SIGN.emis),
-    signedPctImprovementEnd(sc_food_price, bau_food_price, SIGN.food_price),
-    signedPctImprovementEnd(sc_food_sec, bau_food_sec, SIGN.food_sec),
+    signedPctImprovementAverage(sc_soil,  bau_soil,  SIGN.soil),
+    signedPctImprovementAverage(sc_prod,  bauData.total_production, SIGN.prod),
+    // signedPctImprovementAverage(sc_pop,   bauData.population, SIGN.pop),
+    // signedPctImprovementAverage(sc_cal_demand, bauData.food_consumption, SIGN.cal_demand),
+    signedPctImprovementAverage(sc_ssr,   bauData.self_sufficiency_ratio, SIGN.ssr),
+    // signedPctImprovementAverage (sc_inc,   bauData.average_real_income, SIGN.inc),
+    signedPctImprovementAverage(sc_deg,   bau_deg, SIGN.deg),
+    // signedPctImprovementEnd(sc_harv,  bauData.total_harvest, SIGN.harvest),
+    signedPctImprovementAverage(sc_emis,  bau_emis, SIGN.emis),
+    signedPctImprovementAverage(sc_food_price, bau_food_price, SIGN.food_price),
+    signedPctImprovementAverage(sc_food_sec, bau_food_sec, SIGN.food_sec),
   ].map(v => clamp(v, DONUT_CMIN, DONUT_CMAX));
 
   renderDonutWithHeat(donutValues);
@@ -1931,21 +1956,37 @@ async function runSim(){
     });
 
     visiblePlots.push({
-      key: "prod",
-      title: "Production",
-      x: t.slice(),
-      series: [
-        { name: "BAU total", y: smoothSeries(bauData.total_production, t).slice() },
-        ...(hasScenarioData ? [{ name: "Scenario total", y: smoothSeries(scenarioData.total_production, t).slice() }] : [])
-      ]
-    });
+  key: "prod",
+  title: "Production",
+  x: t.slice(),
+  series: [
+    { 
+      name: "Baseline total", 
+      y: smoothSeries(bauData.total_production, t).slice() 
+    },
+
+    ...(hasScenarioData
+      ? scenarioData.land_names.map((name, i) => ({
+          name,
+          y: smoothSeries(scenarioData.production_by_land[i], t).slice()
+        }))
+      : []),
+
+    ...(hasScenarioData
+      ? [{
+          name: "Scenario total",
+          y: smoothSeries(scenarioData.total_production, t).slice()
+        }]
+      : [])
+  ]
+});
 
     visiblePlots.push({
       key: "pop",
       title: "Population",
       x: t.slice(),
       series: [
-        { name: "BAU", y: smoothSeries(bauData.population, t).slice() },
+        { name: "Baseline", y: smoothSeries(bauData.population, t).slice() },
         ...(hasScenarioData ? [{ name: "Scenario", y: smoothSeries(scenarioData.population, t).slice() }] : [])
       ]
     });
@@ -1955,7 +1996,7 @@ async function runSim(){
       title: "Calorie demand",
       x: t.slice(),
       series: [
-        { name: "BAU", y: smoothSeries(bauData.food_consumption, t).slice() },
+        { name: "Baseline", y: smoothSeries(bauData.food_consumption, t).slice() },
         ...(hasScenarioData ? [{ name: "Scenario", y: smoothSeries(scenarioData.food_consumption, t).slice() }] : [])
       ]
     });
@@ -1965,7 +2006,7 @@ async function runSim(){
       title: "Self-sufficiency",
       x: t.slice(),
       series: [
-        { name: "BAU", y: smoothSeries(bauData.self_sufficiency_ratio, t).slice() },
+        { name: "Baseline", y: smoothSeries(bauData.self_sufficiency_ratio, t).slice() },
         ...(hasScenarioData ? [{ name: "Scenario", y: smoothSeries(scenarioData.self_sufficiency_ratio, t).slice() }] : [])
       ]
     });
@@ -1975,37 +2016,54 @@ async function runSim(){
       title: "Real income",
       x: t.slice(),
       series: [
-        { name: "BAU", y: smoothSeries(bauData.average_real_income, t).slice() },
+        { name: "Baseline", y: smoothSeries(bauData.average_real_income, t).slice() },
         ...(hasScenarioData ? [{ name: "Scenario", y: smoothSeries(scenarioData.average_real_income, t).slice() }] : [])
       ]
     });
 
     visiblePlots.push({
-      key: "deg",
-      title: "Degradation",
-      x: t.slice(),
-      series: [
-        { name: "BAU", y: bauData.degradations[0].slice() },
-        ...(hasScenarioData
-          ? scenarioData.land_names.map((name, i) => ({
-              name,
-              y: scenarioData.degradations[i].slice()
-            }))
-          : [])
-      ]
-    });
+  key: "deg",
+  title: "Degradation",
+  x: t.slice(),
+  series: [
+    { 
+      name: "Baseline", 
+      y: bauData.degradations[0].slice() 
+    },
 
-    if (bauData.total_harvest){
-      visiblePlots.push({
-        key: "harvest",
-        title: "Harvest",
-        x: t.slice(),
-        series: [
-          { name: "BAU", y: smoothSeries(bauData.total_harvest, t).slice() },
-          ...(hasScenarioData && scenarioData.total_harvest ? [{ name: "Scenario", y: smoothSeries(scenarioData.total_harvest, t).slice() }] : [])
-        ]
-      });
-    }
+    ...(hasScenarioData
+      ? scenarioData.land_names.map((name, i) => ({
+          name,
+          y: scenarioData.degradations[i].slice()
+        }))
+      : []),
+
+    ...(hasScenarioData
+  ? [{
+      name: "Scenario total (area-weighted)",
+      y: scenarioData.degradations.reduce((acc, arr, i) => {
+        const shares = scenarios[activeScenario]?.l?.share;
+        const totalShare = shares ? shares.reduce((a, b) => a + b, 0) : 1;
+        const w = shares ? shares[i] / totalShare : 1 / scenarioData.degradations.length;
+
+        return acc.map((v, j) => v + arr[j] * w);
+      }, new Array(t.length).fill(0))
+    }]
+  : [])
+  ]
+});
+
+    // if (bauData.total_harvest){
+    //   visiblePlots.push({
+    //     key: "harvest",
+    //     title: "Harvest",
+    //     x: t.slice(),
+    //     series: [
+    //       { name: "BAU", y: smoothSeries(bauData.total_harvest, t).slice() },
+    //       ...(hasScenarioData && scenarioData.total_harvest ? [{ name: "Scenario", y: smoothSeries(scenarioData.total_harvest, t).slice() }] : [])
+    //     ]
+    //   });
+    // }
 
     if (bauData.total_emissions){
       visiblePlots.push({
@@ -2013,7 +2071,7 @@ async function runSim(){
         title: "Net emissions",
         x: t.slice(),
         series: [
-          { name: "BAU total", y: smoothSeries(bauData.total_emissions, t).slice() },
+          { name: "Baseline total", y: smoothSeries(bauData.total_emissions, t).slice() },
           ...(hasScenarioData && scenarioData.total_emissions ? [{ name: "Scenario total", y: smoothSeries(scenarioData.total_emissions, t).slice() }] : [])
         ]
       });
@@ -2047,7 +2105,7 @@ async function runSim(){
         title: "Palma ratio",
         x: t.slice(),
         series: [
-          { name: "BAU", y: smoothSeries(bauData.palma_ratio, t).slice() },
+          { name: "Baseline", y: smoothSeries(bauData.palma_ratio, t).slice() },
           ...(hasScenarioData ? [{ name: "Scenario", y: smoothSeries(scenarioData.palma_ratio, t).slice() }] : [])
         ]
       });
@@ -2059,7 +2117,7 @@ async function runSim(){
         title: "Gini coefficient",
         x: t.slice(),
         series: [
-          { name: "BAU", y: smoothSeries(bauData.gini_coefficient, t).slice() },
+          { name: "Baseline", y: smoothSeries(bauData.gini_coefficient, t).slice() },
           ...(hasScenarioData ? [{ name: "Scenario", y: smoothSeries(scenarioData.gini_coefficient, t).slice() }] : [])
         ]
       });
@@ -2071,7 +2129,7 @@ async function runSim(){
         title: "Food price index",
         x: t.slice(),
         series: [
-          { name: "BAU", y: smoothSeries(bau_food_price, t).slice() },
+          { name: "Baseline", y: smoothSeries(bau_food_price, t).slice() },
           ...(sc_food_price ? [{ name: "Scenario", y: smoothSeries(sc_food_price, t).slice() }] : [])
         ]
       });
@@ -2083,7 +2141,7 @@ async function runSim(){
         title: "Food security",
         x: t.slice(),
         series: [
-          { name: "BAU", y: smoothSeries(bau_food_sec, t).slice() },
+          { name: "Baseline", y: smoothSeries(bau_food_sec, t).slice() },
           ...(sc_food_sec ? [{ name: "Scenario", y: smoothSeries(sc_food_sec, t).slice() }] : [])
         ]
       });
@@ -2123,7 +2181,7 @@ async function runSim(){
     x: t,
     y: smoothSeries(bauData.soils[0], t),
     type: "scatter",
-    name: "BAU (Business as usual)",
+    name: "Baseline",
     line: { width: 6, color: "black" }
   });
 
@@ -2137,7 +2195,7 @@ async function runSim(){
         line:{width:6}
       });
     }
-  }
+  } 
 
   const soilLayout = {
     ...commonLayout("Soil", "Index"),
@@ -2191,7 +2249,7 @@ async function runSim(){
   if (selectedPlot === "prod"){
     setPdfControlsVisible(false);
     const traces = [];
-    traces.push({x:t, y: smoothSeries(bauData.total_production, t), type:"scatter", name:"BAU Total", line:{width:6, color:"black"}});
+    traces.push({x:t, y: smoothSeries(bauData.total_production, t), type:"scatter", name:"Baseline Total", line:{width:6, color:"black"}});
     if (hasScenarioData){
       for (let i=0; i<scenarioData.land_names.length; i++){
         traces.push({x:t, y:smoothSeries(scenarioData.production_by_land[i], t), type:"scatter", name:scenarioData.land_names[i], line:{width:6}, opacity:0.25});
@@ -2208,51 +2266,82 @@ async function runSim(){
   }
   else if (selectedPlot === "pop"){
     setPdfControlsVisible(false);
-    const traces = [{x:t, y: smoothSeries(bauData.population, t), type:"scatter", name:"BAU", line:{width:6, color:"black"}}];
+    const traces = [{x:t, y: smoothSeries(bauData.population, t), type:"scatter", name:"Baseline", line:{width:6, color:"black"}}];
     if (hasScenarioData) traces.push({x:t, y: smoothSeries(scenarioData.population, t), type:"scatter", name:"Scenario", line:{width:6}});
     Plotly.react("plotMain", traces, commonLayout("Population","People"), {displayModeBar:false, responsive:true});
     lastRenderState.visiblePlots.push({ key:"pop", title:"Population", x:t.slice(), series: traces.map(tr => ({ name: tr.name, y: tr.y.slice() })) });
   }
     else if (selectedPlot === "cal_demand"){
     setPdfControlsVisible(false);
-    const traces = [{x:t, y: smoothSeries(bauData.food_consumption, t), type:"scatter", name:"BAU", line:{width:6, color:"black"}}];
+    const traces = [{x:t, y: smoothSeries(bauData.food_consumption, t), type:"scatter", name:"Baseline", line:{width:6, color:"black"}}];
     if (hasScenarioData) traces.push({x:t, y: smoothSeries(scenarioData.food_consumption, t), type:"scatter", name:"Scenario", line:{width:6}});
     Plotly.react("plotMain", traces, commonLayout("Calorie demand","kcal/yr"), {displayModeBar:false, responsive:true});
     lastRenderState.visiblePlots.push({ key:"cal_demand", title:"Calorie demand", x:t.slice(), series: traces.map(tr => ({ name: tr.name, y: tr.y.slice() })) });
   }
   else if (selectedPlot === "ssr"){
     setPdfControlsVisible(false);
-    const traces = [{x:t, y: smoothSeries(bauData.self_sufficiency_ratio, t), type:"scatter", name:"BAU", line:{width:6, color:"black"}}];
+    const traces = [{x:t, y: smoothSeries(bauData.self_sufficiency_ratio, t), type:"scatter", name:"Baseline", line:{width:6, color:"black"}}];
     if (hasScenarioData) traces.push({x:t, y: smoothSeries(scenarioData.self_sufficiency_ratio, t), type:"scatter", name:"Scenario", line:{width:6}});
     Plotly.react("plotMain", traces, commonLayout("Self-sufficiency","%"), {displayModeBar:false, responsive:true});
     lastRenderState.visiblePlots.push({ key:"ssr", title:"Self-sufficiency", x:t.slice(), series: traces.map(tr => ({ name: tr.name, y: tr.y.slice() })) });
   }
   else if (selectedPlot === "inc"){
     setPdfControlsVisible(false);
-    const traces = [{x:t, y: smoothSeries(bauData.average_real_income, t), type:"scatter", name:"BAU", line:{width:6, color:"black"}}];
+    const traces = [{x:t, y: smoothSeries(bauData.average_real_income, t), type:"scatter", name:"Baseline", line:{width:6, color:"black"}}];
     if (hasScenarioData) traces.push({x:t, y: smoothSeries(scenarioData.average_real_income, t), type:"scatter", name:"Scenario", line:{width:6}});
     Plotly.react("plotMain", traces, commonLayout("Real income","£ (real)"), {displayModeBar:false, responsive:true});
     lastRenderState.visiblePlots.push({ key:"inc", title:"Real income", x:t.slice(), series: traces.map(tr => ({ name: tr.name, y: tr.y.slice() })) });
   }
   else if (selectedPlot === "deg"){
-    setPdfControlsVisible(false);
-    const traces = [{x:t, y: bauData.degradations[0], type:"scatter", name:"BAU", line:{width:6, color:"black"}}];
-    if (hasScenarioData){
-      for (let i=0; i<scenarioData.land_names.length; i++){
-        traces.push({x:t, y: scenarioData.degradations[i], type:"scatter", name:scenarioData.land_names[i], line:{width:6}});
-      }
+  setPdfControlsVisible(false);
+
+  const traces = [
+    {
+      x: t,
+      y: bauData.degradations[0],
+      type: "scatter",
+      name: "Baseline",
+      line: { width: 6, color: "black" }
     }
-    Plotly.react("plotMain", traces, commonLayout("Degradation","D"), {displayModeBar:false, responsive:true});
-    lastRenderState.visiblePlots.push({ key:"deg", title:"Degradation", x:t.slice(), series: traces.map(tr => ({ name: tr.name, y: tr.y.slice() })) });
+  ];
+
+  if (hasScenarioData){
+    for (let i = 0; i < scenarioData.land_names.length; i++){
+      traces.push({
+        x: t,
+        y: scenarioData.degradations[i],
+        type: "scatter",
+        name: scenarioData.land_names[i],
+        line: { width: 6 }
+      });
+    }
+
+    traces.push({
+      x: t,
+      y: sc_deg,
+      type: "scatter",
+      name: "Scenario total (area-weighted)",
+      line: { width: 7, dash: "dot" }
+    });
   }
-  else if (selectedPlot === "harvest"){
-    setPdfControlsVisible(false);
-    if (!bauData.total_harvest) { Plotly.purge("plotMain"); return; }
-    const traces = [{x:t, y: smoothSeries(bauData.total_harvest, t), type:"scatter", name:"BAU", line:{width:6, color:"black"}}];
-    if (hasScenarioData && scenarioData.total_harvest) traces.push({x:t, y: smoothSeries(scenarioData.total_harvest, t), type:"scatter", name:"Scenario", line:{width:6}});
-    Plotly.react("plotMain", traces, commonLayout("Total harvest","Tonnes/yr"), {displayModeBar:false, responsive:true});
-    lastRenderState.visiblePlots.push({ key:"harvest", title:"Total harvest", x:t.slice(), series: traces.map(tr => ({ name: tr.name, y: tr.y.slice() })) });
-  }
+
+  Plotly.react(
+    "plotMain",
+    traces,
+    commonLayout("Degradation","D"),
+    { displayModeBar:false, responsive:true }
+  );
+
+  lastRenderState.visiblePlots.push({
+    key: "deg",
+    title: "Degradation",
+    x: t.slice(),
+    series: traces.map(tr => ({
+      name: tr.name,
+      y: tr.y.slice()
+    }))
+  });
+}
   else if (selectedPlot === "emis"){
     setPdfControlsVisible(false);
     if (!bauData.total_emissions) { Plotly.purge("plotMain"); return; }
@@ -2262,7 +2351,7 @@ async function runSim(){
       x:t,
       y: smoothSeries(bauData.total_emissions, t),
       type:"scatter",
-      name:"BAU total",
+      name:"Baseline total",
       line:{width:6, color:"black"}
     });
 
@@ -2338,7 +2427,7 @@ async function runSim(){
     const yS = hasScenarioData ? scenarioData.palma_ratio : null;
     if (!yB) { Plotly.purge("plotMain"); return; }
 
-    const traces = [{x:t, y:smoothSeries(yB, t), type:"scatter", name:"BAU", line:{width:6, color:"black"}}];
+    const traces = [{x:t, y:smoothSeries(yB, t), type:"scatter", name:"Baseline", line:{width:6, color:"black"}}];
     if (yS) traces.push({x:t, y:smoothSeries(yS, t), type:"scatter", name:"Scenario", line:{width:6}});
     Plotly.react("plotMain", traces, commonLayout("Palma ratio","R(t)"), {displayModeBar:false, responsive:true});
     lastRenderState.visiblePlots.push({ key:"palma", title:"Palma ratio", x:t.slice(), series: traces.map(tr => ({ name: tr.name, y: tr.y.slice() })) });
@@ -2352,7 +2441,7 @@ async function runSim(){
     const layout = commonLayout("Gini coefficient","G(t)");
     layout.yaxis.range = [0, 1];
 
-    const traces = [{x:t, y:smoothSeries(yB, t), type:"scatter", name:"BAU", line:{width:6, color:"black"}}];
+    const traces = [{x:t, y:smoothSeries(yB, t), type:"scatter", name:"Baseline", line:{width:6, color:"black"}}];
     if (yS) traces.push({x:t, y:smoothSeries(yS, t), type:"scatter", name:"Scenario", line:{width:6}});
     Plotly.react("plotMain", traces, layout, {displayModeBar:false, responsive:true});
     lastRenderState.visiblePlots.push({ key:"gini", title:"Gini coefficient", x:t.slice(), series: traces.map(tr => ({ name: tr.name, y: tr.y.slice() })) });
@@ -2363,7 +2452,7 @@ async function runSim(){
     const yS = hasScenarioData ? scenarioData.food_price_index : null;
     if (!yB) { Plotly.purge("plotMain"); return; }
 
-    const traces = [{x:t, y:smoothSeries(yB, t), type:"scatter", name:"BAU", line:{width:6, color:"black"}}];
+    const traces = [{x:t, y:smoothSeries(yB, t), type:"scatter", name:"Baseline", line:{width:6, color:"black"}}];
     if (yS) traces.push({x:t, y:smoothSeries(yS, t), type:"scatter", name:"Scenario", line:{width:6}});
     Plotly.react("plotMain", traces, commonLayout("Food price index","£"), {displayModeBar:false, responsive:true});
     lastRenderState.visiblePlots.push({ key:"food_price", title:"Food price index", x:t.slice(), series: traces.map(tr => ({ name: tr.name, y: tr.y.slice() })) });
@@ -2374,7 +2463,7 @@ async function runSim(){
     const yS = hasScenarioData ? scenarioData.food_security_index : null;
     if (!yB) { Plotly.purge("plotMain"); return; }
 
-    const traces = [{x:t, y:smoothSeries(yB, t), type:"scatter", name:"BAU", line:{width:6, color:"black"}}];
+    const traces = [{x:t, y:smoothSeries(yB, t), type:"scatter", name:"Baseline", line:{width:6, color:"black"}}];
     if (yS) traces.push({x:t, y:smoothSeries(yS, t), type:"scatter", name:"Scenario", line:{width:6}});
     Plotly.react("plotMain", traces, commonLayout("Food security index","Index %"), {displayModeBar:false, responsive:true});
     lastRenderState.visiblePlots.push({ key:"food_sec", title:"Food security index", x:t.slice(), series: traces.map(tr => ({ name: tr.name, y: tr.y.slice() })) });
@@ -2477,8 +2566,8 @@ runSim();
 window.addEventListener("resize", () => {
   if (allPlotsMode){
     const ids = [
-      "mini_soil","mini_prod","mini_pop","mini_cal_demand","mini_ssr","mini_inc",
-      "mini_deg","mini_harvest","mini_emis","mini_infl",
+      "mini_soil","mini_prod","mini_pop","mini_cal_demand","mini_ssr",
+      "mini_deg","mini_emis","mini_infl",
       "mini_lambda","mini_palma","mini_gini",
       "mini_food_price","mini_food_sec","mini_inc_pdf"
     ];
