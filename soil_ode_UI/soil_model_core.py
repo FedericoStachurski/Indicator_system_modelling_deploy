@@ -53,52 +53,102 @@ from scipy.special import gammaln  # stable log-gamma for analytic Gini
 #     return 0.0 if (cycle_time < tau - eps) else 1.0
 
 
-def B_pulse_train(t, omega=5.0, tau=1.5, phase=0.0, amp = 1.0):
+import numpy as np
+
+import numpy as np
+
+import numpy as np
+
+def B_pulse_train(t, omega=3.0, tau=1.0, phase=0.0, amp=1.0):
     """
     Trapezoidal wave for farming state.
+
+    Interpretation
+    --------------
+    B(t) = 0 → cover crop (LOW state, no degradation)
+    B(t) = 1 → cash crop (HIGH state, degradation active)
+
+    One full cycle (length = omega) is:
+        LOW plateau → ramp up → HIGH plateau → ramp down
 
     Parameters
     ----------
     t : array-like
-    omega : period
-    tau : duration of LOW state (cover crop)
-    phase : phase shift
-    amp : amplitude (default 1)
+        Time values.
+    omega : float
+        Total length of one cycle.
+    tau : float
+        Duration of LOW plateau (cover crop).
+    phase : float
+        Shifts the signal in time.
+    amp : float
+        Maximum value (default = 1).
 
     Returns
     -------
-    signal in [0, amp]
+    y : array-like
+        Signal in [0, amp].
     """
 
+    # Shift time for phase offset
     t_shift = t - phase
+
+    # Fold time into one repeating cycle [0, omega)
     cycle = np.mod(t_shift, omega)
 
-    ramp = min(tau * 0.25, omega * 0.25)
+    # Duration of the smooth transitions (up and down)
+    ramp = 0.5
 
+    # Output array
     y = np.zeros_like(cycle, dtype=float)
 
-    # Regions (STRICT, no overlap)
+    # --- Sanity check ---
+    # Need space for: LOW + ramp up + HIGH + ramp down
+    if tau + 2 * ramp > omega:
+        raise ValueError(
+            "tau + 2*ramp must be <= omega "
+            "(otherwise no room for HIGH plateau)"
+        )
 
-    # 1. LOW plateau
-    mask_low = cycle < (tau - ramp)
+    # =====================================
+    # Define regions of the trapezoid shape
+    # =====================================
 
-    # 2. RISING edge
-    mask_rise = (cycle >= (tau - ramp)) & (cycle < tau)
+    # 1) LOW plateau (cover crop)
+    # From start of cycle up to tau
+    mask_low = cycle < tau
 
-    # 3. HIGH plateau
-    mask_high = (cycle >= tau) & (cycle < (omega - ramp))
+    # 2) RISING edge (transition 0 → amp)
+    # Linear increase over 'ramp' time
+    mask_rise = (cycle >= tau) & (cycle < tau + ramp)
 
-    # 4. FALLING edge
-    mask_fall = cycle >= (omega - ramp)
+    # 3) HIGH plateau (cash crop / degradation active)
+    # Starts AFTER ramp-up finishes
+    mask_high = (cycle >= tau + ramp) & (cycle < omega - ramp)
 
-    # Assign values
+    # 4) FALLING edge (transition amp → 0)
+    # Last 'ramp' portion of the cycle
+    mask_fall = cycle >= omega - ramp
+
+    # =====================================
+    # Assign values to each region
+    # =====================================
+
+    # LOW plateau → 0
     y[mask_low] = 0.0
 
-    y[mask_rise] = amp * (cycle[mask_rise] - (tau - ramp)) / ramp
+    # RAMP UP → linear increase from 0 to amp
+    y[mask_rise] = amp * (
+        (cycle[mask_rise] - tau) / ramp
+    )
 
+    # HIGH plateau → constant amp
     y[mask_high] = amp
 
-    y[mask_fall] = amp * (1 - (cycle[mask_fall] - (omega - ramp)) / ramp)
+    # RAMP DOWN → linear decrease from amp to 0
+    y[mask_fall] = amp * (
+        1 - (cycle[mask_fall] - (omega - ramp)) / ramp
+    )
 
     return y
 
