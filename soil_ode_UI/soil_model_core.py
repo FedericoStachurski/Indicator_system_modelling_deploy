@@ -53,12 +53,6 @@ from scipy.special import gammaln  # stable log-gamma for analytic Gini
 #     return 0.0 if (cycle_time < tau - eps) else 1.0
 
 
-import numpy as np
-
-import numpy as np
-
-import numpy as np
-
 def B_pulse_train(t, omega=3.0, tau=1.0, phase=0.0, amp = 1.0):
     """
     Simple pulse train for farming state.
@@ -272,6 +266,52 @@ def h_yield(F: float, xi: float, psi: float) -> float:
 
 
 # ------------------------------------------------------------
+# Reinvestment function
+# ------------------------------------------------------------
+
+def J_investment_func(
+    pop,
+    C,
+    P_tilde,
+    I,
+    nu: float,
+    eta: float,
+    beta_q: float,
+    theta: float,
+    eps: float = 1e-12,
+):
+    """
+    Reinvestment potential J(t).
+
+    Mathematical form:
+        J(t) = -nu/2 + sqrt(nu^2/4
+               + nu*eta*beta_q*theta*U(t)*C(t) / (I(t)*P_tilde(t)))
+
+    Notes
+    -----
+    - P_tilde is the baseline soil-driven production, before reinvestment.
+    - C food consumption per capita per year
+    - I inflatio index 
+    - pop population at time t
+    """
+    pop = np.asarray(pop, dtype=float)
+    C = np.asarray(C, dtype=float)
+    P_tilde = np.maximum(np.asarray(P_tilde, dtype=float), eps)
+    I = np.maximum(np.asarray(I, dtype=float), eps)
+
+    nu = float(nu)
+    eta = float(eta)
+    beta_q = float(beta_q)
+    theta = float(theta)
+
+    half_nu = nu / 2.0
+    inside = half_nu**2 + (nu * eta * beta_q * theta * pop * C) / (I * P_tilde)
+    inside = np.maximum(inside, 0.0)
+
+    return -half_nu + np.sqrt(inside)
+
+
+# ------------------------------------------------------------
 # Income distribution helpers
 # ------------------------------------------------------------
 
@@ -319,8 +359,10 @@ class SimulationResult:
     soils: np.ndarray
     degradations: np.ndarray
 
-    productions: np.ndarray              # (n_lands, n_times) tonnes/yr
-    total_production: np.ndarray         # (n_times,) tonnes/yr
+    productions: np.ndarray              # (n_lands, n_times) tonnes/yr, baseline/soil-driven
+    total_production: np.ndarray         # (n_times,) tonnes/yr, baseline/soil-driven P_tilde
+    total_production_real: np.ndarray    # (n_times,) tonnes/yr, boosted production P
+    J_investment: np.ndarray             # (n_times,) reinvestment potential J(t)
     weighted_soil: np.ndarray
 
     land_names: List[str]
@@ -488,6 +530,16 @@ def simulate_multi_land(
     # GLOBAL defaults
     E_H_default: float = 1.6,
     E_S_default: float = 1.28,
+
+    # Reinvestment parameters
+    theta: float = 0.51,
+    eta: float = 0.05,
+    nu: float = 6.375e10,
+
+    # Baseline constants for food price equation
+    Q_0: float = 5000.0,
+    R_0: float = 120.0,
+    I_0: float = 1.0,
 ) -> SimulationResult:
 
     if len(lands) == 0:
@@ -645,15 +697,32 @@ def simulate_multi_land(
 
     # ---- food consumption / demand ----
     # Food consumption is taken to be calorie demand.
-    food_consumption = population * float(calorie_per_person)
+    food_consumption = population * float(calorie_per_person) 
+
+    # ---- reinvestment boost ----
+    # total_production is P_tilde(t): baseline production from the soil/land model.
+    # total_production_real is P(t): realised production after reinvestment.
+    # beta_q = float(Q_0) * float(R_0) * float(I_0) / 100
+    beta_q = total_production[0]*(1.01) / (1000 * calorie_per_person / calories_per_unit)  # scale to current production for more dynamic response
+
+    J_investment_series = J_investment_func(
+        pop=population,
+        C=food_consumption / calories_per_unit,
+        P_tilde=total_production,
+        I=inflation_index,
+        nu=nu,
+        eta=eta,
+        beta_q=beta_q,
+        theta=theta,
+    )
+
+    total_production_real = total_production * (1.0 + J_investment_series / float(nu))
 
     # ---- self-sufficiency ratio ----
-    # Implemented as rolling mean of total production converted to calories
+    # Implemented as rolling mean of boosted production converted to calories.
     temp_cycle_rolling = max(1, int(T_max))
-    rolling_total_production = rolling_mean(total_production, temp_cycle_rolling)
+    rolling_total_production = rolling_mean(total_production_real, temp_cycle_rolling)
     calorie_production = rolling_total_production * float(calories_per_unit)
-
-
 
     self_sufficiency_ratio = 100.0 * (
         calorie_production / np.maximum(food_consumption, 1e-12)
@@ -662,19 +731,19 @@ def simulate_multi_land(
     # ---- harvest ----
     hf = float(np.clip(harvest_fraction, 0.0, 1.0))
     harvest_per_land = hf * productions
-    total_harvest = harvest_per_land.sum(axis=0)
+    # The reinvestment boost is applied only at total-system level, not per land.
+    total_harvest = hf * total_production_real
 
     total_emissions = emissions.sum(axis=0)
 
     income_x20 = gamma.ppf(0.20, a=k_shape, scale=scale)
 
     # ---- food price index Q(t) ----
-    Q_0 = 5000 # baseline price index
-    R_0 = 120 # baseline self-sufficiency ratio (%)
-    I_0 = 1.0 # baseline inflation index
-    beta_q = Q_0 * R_0 * I_0
-    # food_price_index = beta_q *  food_consumption / (np.maximum(inflation_index, 1e-12)*np.maximum(calorie_production, 1e-12))
-    food_price_index = beta_q * 1 /(np.maximum(self_sufficiency_ratio, 1e-12) * np.maximum(inflation_index, 1e-12))
+    # beta_q was already computed above for the reinvestment equation.
+    food_price_index = 100 * beta_q / (
+        np.maximum(self_sufficiency_ratio, 1e-12)
+        * np.maximum(inflation_index, 1e-12)
+    )
 
     # ---- food security index Z(t) ----
     food_security_index = 100 * food_price_index / np.maximum(income_x20, 1e-12)
@@ -691,6 +760,8 @@ def simulate_multi_land(
         degradations=degradations,
         productions=productions,
         total_production=total_production,
+        total_production_real=total_production_real,
+        J_investment=J_investment_series,
         weighted_soil=weighted_soil,
         land_names=land_names,
         land_fractions=land_fractions_arr,

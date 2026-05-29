@@ -13,7 +13,7 @@ class LandIn(BaseModel):
     land_fraction: float
     P_max: float
 
-    recovery_name: Optional[str] = "Constant alpha"
+    recovery_name: Optional[str] = "Logistic alpha(S)"
     recovery_params: Dict[str, Any] = Field(default_factory=dict)
 
     omega: int = 1
@@ -46,12 +46,22 @@ class SimRequest(BaseModel):
     income_x_max_mult: float = 10.0
     income_nx: int = 400
 
+    # production / demand conversion
+    harvest_fraction: float = 1.0
+    calories_per_unit: float = 255_000.0
+    calorie_per_person: float = 700_000.0
+
     # land area
     total_land_area: float = 560_000.0
 
     # emissions defaults
     E_H_default: float = 1.5
     E_S_default: float = 1.17
+
+    # reinvestment feedback parameters
+    theta: float = 0.51
+    eta: float = 0.05
+    nu: float = 6.375e8
 
 
 class SimResponse(BaseModel):
@@ -61,8 +71,13 @@ class SimResponse(BaseModel):
     land_names: List[str]
     alphas: List[float]
 
+    # baseline soil-based production P~
     total_production: List[float]
     production_by_land: List[List[float]]
+
+    # reinvestment and boosted production P
+    J_investment: Optional[List[float]] = None
+    total_production_real: Optional[List[float]] = None
 
     population: List[float]
     food_consumption: List[float]
@@ -87,5 +102,6 @@ class SimResponse(BaseModel):
 
     income_x: Optional[List[float]] = None
     income_pdf: Optional[List[List[float]]] = None
+
     food_price_index: Optional[List[float]] = None
     food_security_index: Optional[List[float]] = None

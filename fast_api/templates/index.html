@@ -347,6 +347,7 @@
         <select id="plotSelect" class="plot-select">
           <option value="none" selected>(show only Soil)</option>
           <option value="prod">Production</option>
+          <option value="reinvest">Reinvestment J(t)</option>
           <option value="pop">Population</option>
           <option value="cal_demand">Calorie demand</option>
           <option value="ssr">Self-sufficiency</option>
@@ -434,6 +435,21 @@
           <div class="row">
             <div class="labelrow"><span><b>Inflation rate (δI)</b></span><span id="inflLabel" class="small"></span></div>
             <input id="infl" type="range" min="0" max="0.08" step="0.001" value="0.017">
+          </div>
+
+          <div class="row">
+            <div class="labelrow"><span><b>Reinvestment θ</b></span><span id="thetaLabel" class="small"></span></div>
+            <input id="theta" type="range" min="0" max="2" step="0.01" value="0.51">
+          </div>
+
+          <div class="row">
+            <div class="labelrow"><span><b>Reinvestment η</b></span><span id="etaLabel" class="small"></span></div>
+            <input id="eta" type="range" min="0" max="0.2" step="0.005" value="0.05">
+          </div>
+
+          <div class="row">
+            <div class="labelrow"><span><b>Investment scale ν</b></span><span id="nuLabel" class="small"></span></div>
+            <input id="nu" type="number" min="1" step="1000000" value="6.375e10">
           </div>
 
           <div class="row">
@@ -698,6 +714,7 @@ function defaultScenarioState(index){
       tmax: 50, pop: 0.02, n: 300, selectedPlot: "none",
       donutCmap: "Viridis", rollOn: "off", rollYears: 3,
       muGrow: 0.014, infl: 0.017, lamRate: 0.001,
+      theta: 0.51, eta: 0.05, nu: 6.375e10,
       allPlotsMode: false,
     },
     lands: []
@@ -739,6 +756,9 @@ function pullUIIntoActiveScenario(){
   sc.globals.muGrow = +el("muGrow").value;
   sc.globals.infl   = +el("infl").value;
   sc.globals.lamRate= +el("lamRate").value;
+  sc.globals.theta  = +el("theta").value;
+  sc.globals.eta    = +el("eta").value;
+  sc.globals.nu     = Math.max(1, +el("nu").value || 6.375e10);
   sc.globals.allPlotsMode = allPlotsMode;
 
   sc.lands = deepClone(landsState);
@@ -766,6 +786,9 @@ function pushScenarioToUI(idx){
   el("muGrow").value = sc.globals.muGrow ?? 0.014;
   el("infl").value   = sc.globals.infl ?? 0.017;
   el("lamRate").value= sc.globals.lamRate ?? 0.001;
+  el("theta").value  = sc.globals.theta ?? 0.51;
+  el("eta").value    = sc.globals.eta ?? 0.05;
+  el("nu").value     = sc.globals.nu ?? 6.375e10;
 
   allPlotsMode = !!sc.globals.allPlotsMode;
   setAllPlotsMode(allPlotsMode, false);
@@ -810,6 +833,9 @@ function setGlobalLabels(){
   el("muGrowLabel").textContent = (+el("muGrow").value).toFixed(3);
   el("inflLabel").textContent   = (+el("infl").value).toFixed(3);
   el("lamRateLabel").textContent= (+el("lamRate").value).toFixed(3);
+  el("thetaLabel").textContent  = (+el("theta").value).toFixed(2);
+  el("etaLabel").textContent    = (+el("eta").value).toFixed(3);
+  el("nuLabel").textContent     = Number(+el("nu").value || 0).toExponential(2);
 }
 
 function updateShareTotal(){
@@ -1312,6 +1338,18 @@ function getFoodSecuritySeries(data){
   return data?.food_security_index ?? data?.food_insecurity_index ?? null;
 }
 
+function getBoostedProductionSeries(data){
+  return data?.total_production_real ?? data?.total_production ?? null;
+}
+
+function getSoilProductionSeries(data){
+  return data?.total_production ?? null;
+}
+
+function getReinvestmentSeries(data){
+  return data?.J_investment ?? null;
+}
+
 function renderAllPlots(data){
   const {
     t,
@@ -1329,6 +1367,12 @@ function renderAllPlots(data){
   const scFoodPrice = hasScenarioData ? getFoodPriceSeries(scenarioData) : null;
   const bauFoodSec = getFoodSecuritySeries(bauData);
   const scFoodSec = hasScenarioData ? getFoodSecuritySeries(scenarioData) : null;
+  const bauProdBoosted = getBoostedProductionSeries(bauData);
+  const scProdBoosted = hasScenarioData ? getBoostedProductionSeries(scenarioData) : null;
+  const bauProdSoil = getSoilProductionSeries(bauData);
+  const scProdSoil = hasScenarioData ? getSoilProductionSeries(scenarioData) : null;
+  const bauJ = getReinvestmentSeries(bauData);
+  const scJ = hasScenarioData ? getReinvestmentSeries(scenarioData) : null;
 
   const plotDefs = [
     { key: "soil" },
@@ -1343,11 +1387,10 @@ function renderAllPlots(data){
     { key: "infl" },
     { key: "lambda" },
     { key: "palma" },
-    { key: "gini" },
-    { key: "food_price" },
-    { key: "food_sec" }
+    { key: "gini" }
   ];
 
+  if (bauJ) plotDefs.push({ key: "reinvest" });
   if (bauFoodPrice) plotDefs.push({ key: "food_price" });
   if (bauFoodSec) plotDefs.push({ key: "food_sec" });
   if (incX && incPDF && incPDF.length) plotDefs.push({ key: "inc_pdf" });
@@ -1391,12 +1434,24 @@ function renderAllPlots(data){
 
   {
     const traces = [
-      { x:t, y:smoothSeries(bauData.total_production, t), type:"scatter", name:"Baseline total", line:{width:3, color:"black"} }
+      { x:t, y:smoothSeries(bauProdBoosted, t), type:"scatter", name:"Baseline boosted P", line:{width:3, color:"black"} },
+      { x:t, y:smoothSeries(bauProdSoil, t), type:"scatter", name:"Baseline soil P~", line:{width:2, color:"black", dash:"dash"}, opacity:0.45 }
     ];
     if (hasScenarioData){
-      traces.push({ x:t, y:smoothSeries(scenarioData.total_production, t), type:"scatter", name:"Scenario total", line:{width:3, dash:"dot"} });
+      traces.push({ x:t, y:smoothSeries(scProdSoil, t), type:"scatter", name:"Scenario soil P~", line:{width:2, dash:"dash"}, opacity:0.45 });
+      traces.push({ x:t, y:smoothSeries(scProdBoosted, t), type:"scatter", name:"Scenario boosted P", line:{width:3, dash:"dot"} });
     }
     Plotly.react("mini_prod", traces, smallLayout("Production", "Tonnes/yr"), {displayModeBar:false, responsive:true});
+  }
+
+  if (bauJ && el("mini_reinvest")){
+    const obj = baseTwoTrace(
+      smoothSeries(bauJ, t),
+      scJ ? smoothSeries(scJ, t) : null,
+      "Reinvestment J(t)",
+      "J(t)"
+    );
+    Plotly.react("mini_reinvest", obj.traces, obj.layout, {displayModeBar:false, responsive:true});
   }
 
   {
@@ -1740,6 +1795,10 @@ function buildPayloadFromLands(lands){
     inflation_rate: +el("infl").value,
     redistribution_rate: +el("lamRate").value,
 
+    theta: +el("theta").value,
+    eta: +el("eta").value,
+    nu: Math.max(1, +el("nu").value || 6.375e10),
+
     lands: lands.map(l => {
       const scenario_name = l.scenario_name || "Fertiliser parabola";
       const deg_params = (scenario_name === "Fertiliser parabola")
@@ -1877,7 +1936,13 @@ async function runSim(){
   const sc_soil = hasScenarioData ? weightedSeries(scenarioData.soils, w) : bau_soil;
   const sc_deg  = hasScenarioData ? weightedSeries(scenarioData.degradations, w) : bau_deg;
 
-  const sc_prod  = hasScenarioData ? scenarioData.total_production : bauData.total_production;
+  const bau_prod = getBoostedProductionSeries(bauData);
+  const bau_prod_soil = getSoilProductionSeries(bauData);
+  const bau_J = getReinvestmentSeries(bauData);
+
+  const sc_prod  = hasScenarioData ? getBoostedProductionSeries(scenarioData) : bau_prod;
+  const sc_prod_soil = hasScenarioData ? getSoilProductionSeries(scenarioData) : bau_prod_soil;
+  const sc_J = hasScenarioData ? getReinvestmentSeries(scenarioData) : bau_J;
   const sc_pop   = hasScenarioData ? scenarioData.population : bauData.population;
   const sc_cal_demand = hasScenarioData ? scenarioData.food_consumption : bauData.food_consumption;
   const sc_ssr   = hasScenarioData ? scenarioData.self_sufficiency_ratio : bauData.self_sufficiency_ratio;
@@ -1901,7 +1966,7 @@ async function runSim(){
 
   const donutValues = [
     signedPctImprovementAverage(sc_soil,  bau_soil,  SIGN.soil),
-    signedPctImprovementAverage(sc_prod,  bauData.total_production, SIGN.prod),
+    signedPctImprovementAverage(sc_prod,  bau_prod, SIGN.prod),
     // signedPctImprovementAverage(sc_pop,   bauData.population, SIGN.pop),
     // signedPctImprovementAverage(sc_cal_demand, bauData.food_consumption, SIGN.cal_demand),
     signedPctImprovementAverage(sc_ssr,   bauData.self_sufficiency_ratio, SIGN.ssr),
@@ -1956,30 +2021,38 @@ async function runSim(){
     });
 
     visiblePlots.push({
-  key: "prod",
-  title: "Production",
-  x: t.slice(),
-  series: [
-    { 
-      name: "Baseline total", 
-      y: smoothSeries(bauData.total_production, t).slice() 
-    },
+      key: "prod",
+      title: "Production",
+      x: t.slice(),
+      series: [
+        { name: "Baseline boosted P", y: smoothSeries(bau_prod, t).slice() },
+        { name: "Baseline soil P~", y: smoothSeries(bau_prod_soil, t).slice() },
+        ...(hasScenarioData
+          ? scenarioData.land_names.map((name, i) => ({
+              name: `${name} soil P~`,
+              y: smoothSeries(scenarioData.production_by_land[i], t).slice()
+            }))
+          : []),
+        ...(hasScenarioData
+          ? [
+              { name: "Scenario soil P~", y: smoothSeries(sc_prod_soil, t).slice() },
+              { name: "Scenario boosted P", y: smoothSeries(sc_prod, t).slice() }
+            ]
+          : [])
+      ]
+    });
 
-    ...(hasScenarioData
-      ? scenarioData.land_names.map((name, i) => ({
-          name,
-          y: smoothSeries(scenarioData.production_by_land[i], t).slice()
-        }))
-      : []),
-
-    ...(hasScenarioData
-      ? [{
-          name: "Scenario total",
-          y: smoothSeries(scenarioData.total_production, t).slice()
-        }]
-      : [])
-  ]
-});
+    if (bau_J){
+      visiblePlots.push({
+        key: "reinvest",
+        title: "Reinvestment J(t)",
+        x: t.slice(),
+        series: [
+          { name: "Baseline", y: smoothSeries(bau_J, t).slice() },
+          ...(hasScenarioData && sc_J ? [{ name: "Scenario", y: smoothSeries(sc_J, t).slice() }] : [])
+        ]
+      });
+    }
 
     visiblePlots.push({
       key: "pop",
@@ -2162,7 +2235,7 @@ async function runSim(){
 
     setTimeout(() => {
       const ids = [
-        "mini_soil","mini_prod","mini_pop","mini_cal_demand","mini_ssr","mini_inc",
+        "mini_soil","mini_prod","mini_reinvest","mini_pop","mini_cal_demand","mini_ssr","mini_inc",
         "mini_deg","mini_harvest","mini_emis","mini_infl","mini_lambda",
         "mini_palma","mini_gini","mini_food_price","mini_food_sec","mini_inc_pdf"
       ];
@@ -2249,12 +2322,14 @@ async function runSim(){
   if (selectedPlot === "prod"){
     setPdfControlsVisible(false);
     const traces = [];
-    traces.push({x:t, y: smoothSeries(bauData.total_production, t), type:"scatter", name:"Baseline Total", line:{width:6, color:"black"}});
+    traces.push({x:t, y: smoothSeries(bau_prod, t), type:"scatter", name:"Baseline boosted P", line:{width:6, color:"black"}});
+    traces.push({x:t, y: smoothSeries(bau_prod_soil, t), type:"scatter", name:"Baseline soil P~", line:{width:4, color:"black", dash:"dash"}, opacity:0.45});
     if (hasScenarioData){
       for (let i=0; i<scenarioData.land_names.length; i++){
-        traces.push({x:t, y:smoothSeries(scenarioData.production_by_land[i], t), type:"scatter", name:scenarioData.land_names[i], line:{width:6}, opacity:0.25});
+        traces.push({x:t, y:smoothSeries(scenarioData.production_by_land[i], t), type:"scatter", name:`${scenarioData.land_names[i]} soil P~`, line:{width:5}, opacity:0.25});
       }
-      traces.push({x:t, y:smoothSeries(scenarioData.total_production, t), type:"scatter", name:"Scenario Total", line:{width:6, dash:"dot"}});
+      traces.push({x:t, y:smoothSeries(sc_prod_soil, t), type:"scatter", name:"Scenario soil P~", line:{width:5, dash:"dash"}, opacity:0.50});
+      traces.push({x:t, y:smoothSeries(sc_prod, t), type:"scatter", name:"Scenario boosted P", line:{width:6, dash:"dot"}});
     }
     Plotly.react("plotMain", traces, commonLayout("Production", "Tonnes/yr"), {displayModeBar:false, responsive:true});
     lastRenderState.visiblePlots.push({
@@ -2263,6 +2338,14 @@ async function runSim(){
       x: t.slice(),
       series: traces.map(tr => ({ name: tr.name, y: tr.y.slice() }))
     });
+  }
+  else if (selectedPlot === "reinvest"){
+    setPdfControlsVisible(false);
+    if (!bau_J) { Plotly.purge("plotMain"); return; }
+    const traces = [{x:t, y:smoothSeries(bau_J, t), type:"scatter", name:"Baseline", line:{width:6, color:"black"}}];
+    if (hasScenarioData && sc_J) traces.push({x:t, y:smoothSeries(sc_J, t), type:"scatter", name:"Scenario", line:{width:6}});
+    Plotly.react("plotMain", traces, commonLayout("Reinvestment potential J(t)", "J(t)"), {displayModeBar:false, responsive:true});
+    lastRenderState.visiblePlots.push({ key:"reinvest", title:"Reinvestment J(t)", x:t.slice(), series: traces.map(tr => ({ name: tr.name, y: tr.y.slice() })) });
   }
   else if (selectedPlot === "pop"){
     setPdfControlsVisible(false);
@@ -2531,7 +2614,7 @@ function triggerSim(){
 }
 
 // global sliders
-["tmax","pop","n","muGrow","infl","lamRate"].forEach((id) => el(id).addEventListener("input", triggerSim));
+["tmax","pop","n","muGrow","infl","lamRate","theta","eta","nu"].forEach((id) => el(id).addEventListener("input", triggerSim));
 
 // rolling controls
 el("rollOn").addEventListener("change", triggerSim);
@@ -2566,7 +2649,7 @@ runSim();
 window.addEventListener("resize", () => {
   if (allPlotsMode){
     const ids = [
-      "mini_soil","mini_prod","mini_pop","mini_cal_demand","mini_ssr",
+      "mini_soil","mini_prod","mini_reinvest","mini_pop","mini_cal_demand","mini_ssr",
       "mini_deg","mini_emis","mini_infl",
       "mini_lambda","mini_palma","mini_gini",
       "mini_food_price","mini_food_sec","mini_inc_pdf"

@@ -10,7 +10,7 @@ venv/
 # python
 __pycache__/
 *.pyc
-
+*.ipynb
 # mac
 .DS_Store
 # Jupyter Notebook
