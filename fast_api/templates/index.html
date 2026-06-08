@@ -438,17 +438,17 @@
           </div>
 
           <div class="row">
-            <div class="labelrow"><span><b>Reinvestment θ</b></span><span id="thetaLabel" class="small"></span></div>
+            <div class="labelrow"><span><b>Households/Population θ</b></span><span id="thetaLabel" class="small"></span></div>
             <input id="theta" type="range" min="0" max="2" step="0.01" value="0.51">
           </div>
 
           <div class="row">
             <div class="labelrow"><span><b>Reinvestment η</b></span><span id="etaLabel" class="small"></span></div>
-            <input id="eta" type="range" min="0" max="0.2" step="0.005" value="0.05">
+            <input id="eta" type="range" min="0" max="1" step="0.005" value="0.05">
           </div>
 
           <div class="row">
-            <div class="labelrow"><span><b>Investment scale ν</b></span><span id="nuLabel" class="small"></span></div>
+            <div class="labelrow"><span><b>Investment scale ѵ</b></span><span id="nuLabel" class="small"></span></div>
             <input id="nu" type="number" min="1" step="1000000" value="6.375e10">
           </div>
 
@@ -519,6 +519,7 @@
 <script>
 const el = (id) => document.getElementById(id);
 const deepClone = (obj) => (window.structuredClone ? structuredClone(obj) : JSON.parse(JSON.stringify(obj)));
+const THETA_FIXED = 0.51;
 
 let lastRenderState = null;
 
@@ -756,6 +757,7 @@ function pullUIIntoActiveScenario(){
   sc.globals.muGrow = +el("muGrow").value;
   sc.globals.infl   = +el("infl").value;
   sc.globals.lamRate= +el("lamRate").value;
+  // sc.globals.theta  = +el("theta").value;
   sc.globals.theta  = +el("theta").value;
   sc.globals.eta    = +el("eta").value;
   sc.globals.nu     = Math.max(1, +el("nu").value || 6.375e10);
@@ -786,7 +788,8 @@ function pushScenarioToUI(idx){
   el("muGrow").value = sc.globals.muGrow ?? 0.014;
   el("infl").value   = sc.globals.infl ?? 0.017;
   el("lamRate").value= sc.globals.lamRate ?? 0.001;
-  el("theta").value  = sc.globals.theta ?? 0.51;
+  // el("theta").value  = sc.globals.theta ?? 0.51;
+  sc.globals.theta = sc.globals.theta ?? THETA_FIXED;
   el("eta").value    = sc.globals.eta ?? 0.05;
   el("nu").value     = sc.globals.nu ?? 6.375e10;
 
@@ -833,7 +836,9 @@ function setGlobalLabels(){
   el("muGrowLabel").textContent = (+el("muGrow").value).toFixed(3);
   el("inflLabel").textContent   = (+el("infl").value).toFixed(3);
   el("lamRateLabel").textContent= (+el("lamRate").value).toFixed(3);
-  el("thetaLabel").textContent  = (+el("theta").value).toFixed(2);
+  if (el("thetaLabel") && el("theta")) {
+    el("thetaLabel").textContent = (+el("theta").value).toFixed(2);
+  }
   el("etaLabel").textContent    = (+el("eta").value).toFixed(3);
   el("nuLabel").textContent     = Number(+el("nu").value || 0).toExponential(2);
 }
@@ -1795,7 +1800,7 @@ function buildPayloadFromLands(lands){
     inflation_rate: +el("infl").value,
     redistribution_rate: +el("lamRate").value,
 
-    theta: +el("theta").value,
+    theta: THETA_FIXED,
     eta: +el("eta").value,
     nu: Math.max(1, +el("nu").value || 6.375e10),
 
@@ -2614,7 +2619,7 @@ function triggerSim(){
 }
 
 // global sliders
-["tmax","pop","n","muGrow","infl","lamRate","theta","eta","nu"].forEach((id) => el(id).addEventListener("input", triggerSim));
+["tmax","pop","n","muGrow","infl","lamRate","eta","nu"].forEach((id) => el(id).addEventListener("input", triggerSim));
 
 // rolling controls
 el("rollOn").addEventListener("change", triggerSim);

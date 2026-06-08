@@ -9,8 +9,11 @@ No Streamlit or plotting here.
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
+
+
 import numpy as np
 from scipy import signal
+from scipy.signal import savgol_filter
 from scipy.integrate import solve_ivp
 from scipy.stats import gamma
 from scipy.special import gammaln  # stable log-gamma for analytic Gini
@@ -51,6 +54,58 @@ from scipy.special import gammaln  # stable log-gamma for analytic Gini
 
 #     cycle_time = (t - phase) % omega
 #     return 0.0 if (cycle_time < tau - eps) else 1.0
+
+
+def savgol_smooth_years(
+    y,
+    t,
+    window_years: float = 3.0,
+    polyorder: int = 2,
+    preserve_initial: bool = True,
+):
+    y = np.asarray(y, dtype=float)
+    t = np.asarray(t, dtype=float)
+
+    if y.size < 5:
+        return y.copy()
+
+    dt = float(np.median(np.diff(t)))
+    if dt <= 0:
+        return y.copy()
+
+    # Convert a physical window in years to a number of samples
+    window_length = int(round(window_years / dt))
+
+    # Savitzky-Golay requires an odd window length
+    if window_length % 2 == 0:
+        window_length += 1
+
+    # Window must be larger than polyorder
+    min_window = polyorder + 2
+    if min_window % 2 == 0:
+        min_window += 1
+
+    window_length = max(window_length, min_window)
+
+    # Window cannot exceed length of data
+    if window_length >= y.size:
+        window_length = y.size if y.size % 2 == 1 else y.size - 1
+
+    if window_length <= polyorder or window_length < 3:
+        return y.copy()
+
+    y_smooth = savgol_filter(
+        y,
+        window_length=window_length,
+        polyorder=polyorder,
+        mode="interp",
+    )
+
+    # Optional: force the plotted curve to respect the exact initial value
+    if preserve_initial:
+        y_smooth[0] = y[0]
+
+    return y_smooth
 
 
 def B_pulse_train(t, omega=3.0, tau=1.0, phase=0.0, amp = 1.0):
@@ -531,22 +586,27 @@ def simulate_multi_land(
     E_H_default: float = 1.6,
     E_S_default: float = 1.28,
 
-    # Reinvestment parameters
-    theta: float = 0.51,
-    eta: float = 0.05,
-    nu: float = 6.375e10,
-
     # Baseline constants for food price equation
     Q_0: float = 5000.0,
     R_0: float = 120.0,
     I_0: float = 1.0,
+
+    # Reinvestment parameters
+    theta: float = 0.51,
+    eta: float = 0.05,
+    U_0: float | None = None,
+    J_0: float | None = None,
+    nu: float | None = None,
+
+
 ) -> SimulationResult:
 
     if len(lands) == 0:
         raise ValueError("simulate_multi_land: need at least one LandConfig")
 
     n_lands = len(lands)
-    t_eval = np.linspace(0.0, T_max, int(n_points*T_max))
+    n_steps = int(round(float(n_points) * float(T_max)))
+    t_eval = np.linspace(0.0, float(T_max), n_steps + 1)
 
     soils = np.zeros((n_lands, t_eval.size))
     degradations = np.zeros((n_lands, t_eval.size))
@@ -705,6 +765,15 @@ def simulate_multi_land(
     # beta_q = float(Q_0) * float(R_0) * float(I_0) / 100
     beta_q = total_production[0]*(1.01) / (1000 * calorie_per_person / calories_per_unit)  # scale to current production for more dynamic response
 
+    if U_0 is None:
+        U_0 = 2.55e6 / theta
+
+    if J_0 is None:
+        J_0 = eta * theta * U_0 * Q_0
+
+    if nu is None:
+        nu = J_0 / 0.01
+
     J_investment_series = J_investment_func(
         pop=population,
         C=food_consumption / calories_per_unit,
@@ -716,13 +785,20 @@ def simulate_multi_land(
         theta=theta,
     )
 
+    # Debug system prints
+    # print(f"J_investment_series: {J_investment_series}")
+    # print(f"U_0: {U_0}")
+    # print(f"Q_0: {Q_0}")
+    # print(f"J_0: {J_0}")
+    # print(f"nu: {nu} ")
+
     total_production_real = total_production * (1.0 + J_investment_series / float(nu))
 
     # ---- self-sufficiency ratio ----
-    # Implemented as rolling mean of boosted production converted to calories.
-    temp_cycle_rolling = max(1, int(T_max))
-    rolling_total_production = rolling_mean(total_production_real, temp_cycle_rolling)
-    calorie_production = rolling_total_production * float(calories_per_unit)
+    # Use instantaneous boosted production.
+    # Important: this preserves the true t=0 value and makes results independent
+    # of the plotting/time resolution n_points.
+    calorie_production = total_production_real * float(calories_per_unit)
 
     self_sufficiency_ratio = 100.0 * (
         calorie_production / np.maximum(food_consumption, 1e-12)
