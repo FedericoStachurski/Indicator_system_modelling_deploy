@@ -164,6 +164,25 @@
       min-height: 0;
     }
 
+    .side-head{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .side-toggle-btn{
+      padding: 5px 8px;
+      font-size: 11px;
+      border-radius: 9px;
+    }
+
+    #plotSystemMap{
+      width: 100%;
+      height: 100%;
+      min-height: 260px;
+      min-width: 0;
+    }
     .modal-overlay{
       position: fixed;
       inset: 0;
@@ -500,9 +519,19 @@
 
       <div class="side">
         <div class="side-card">
-          <div class="side-title">Indicator system</div>
+          <div class="side-head">
+            <div class="side-title" id="sidePanelTitle">Indicator summary</div>
+            <button class="btn side-toggle-btn" id="sideViewToggle" type="button">
+              Show system map
+            </button>
+          </div>
+
           <div id="plotDonut" class="donut"></div>
-          <div class="side-note">Signed % change vs Baseline (time average).</div>
+          <div id="plotSystemMap" class="donut" style="display:none;"></div>
+
+          <div class="side-note" id="sidePanelNote">
+            Signed % change vs Baseline (time average).
+          </div>
         </div>
       </div>
     </div>
@@ -834,6 +863,7 @@ let activeScenario = 0;
 let selectedPlot = "none";
 let landsState = deepClone(scenarios[0].lands);
 let allPlotsMode = false;
+let sideView = "donut";
 
 function refreshScenarioSelect(){
   const sel = el("scenarioSelect");
@@ -1381,6 +1411,153 @@ function renderDonutWithHeat(values){
   };
 
   Plotly.react("plotDonut", [pie, colorbarTrace], layout, { displayModeBar:false, responsive:true });
+}
+
+function updateSideView(){
+  const isSystem = sideView === "system";
+
+  el("plotDonut").style.display = isSystem ? "none" : "block";
+  el("plotSystemMap").style.display = isSystem ? "block" : "none";
+
+  el("sidePanelTitle").textContent = isSystem
+    ? "Connected indicator system"
+    : "Indicator summary";
+
+  el("sidePanelNote").textContent = isSystem
+    ? "Conceptual links between land, production, affordability, and inequality indicators."
+    : "Signed % change vs Baseline (time average).";
+
+  el("sideViewToggle").textContent = isSystem
+    ? "Show doughnut"
+    : "Show system map";
+
+  setTimeout(() => {
+    if (isSystem) {
+      renderSystemMap();
+      Plotly.Plots.resize("plotSystemMap");
+    } else {
+      Plotly.Plots.resize("plotDonut");
+    }
+  }, 0);
+}
+// TEMPORARY: render a system map as a side view option
+function renderSystemMap(){
+  const nodes = [
+    { id:"Land use", x:0.10, y:0.72 },
+    { id:"Soil health", x:0.33, y:0.78 },
+    { id:"Production", x:0.58, y:0.78 },
+    { id:"Self-sufficiency", x:0.82, y:0.78 },
+
+    { id:"Emissions", x:0.28, y:0.50 },
+    { id:"Food price", x:0.64, y:0.50 },
+    { id:"Food insecurity", x:0.86, y:0.50 },
+
+    { id:"Income", x:0.42, y:0.26 },
+    { id:"Inequality", x:0.68, y:0.26 },
+    { id:"Reinvestment", x:0.46, y:0.08 }
+  ];
+
+  const links = [
+    ["Land use", "Soil health"],
+    ["Soil health", "Production"],
+    ["Production", "Self-sufficiency"],
+    ["Self-sufficiency", "Food price"],
+    ["Food price", "Food insecurity"],
+    ["Income", "Food insecurity"],
+    ["Income", "Inequality"],
+    ["Inequality", "Food insecurity"],
+    ["Production", "Reinvestment"],
+    ["Reinvestment", "Production"],
+    ["Land use", "Emissions"],
+    ["Emissions", "Food price"]
+  ];
+
+  const nodeById = Object.fromEntries(nodes.map(n => [n.id, n]));
+
+  const edgeTraces = links.map(([a, b]) => {
+    const A = nodeById[a];
+    const B = nodeById[b];
+
+    return {
+      type: "scatter",
+      mode: "lines",
+      x: [A.x, B.x],
+      y: [A.y, B.y],
+      line: {
+        width: 2,
+        color: "rgba(0,0,0,0.35)"
+      },
+      hoverinfo: "skip",
+      showlegend: false
+    };
+  });
+
+  const nodeTrace = {
+    type: "scatter",
+    mode: "markers+text",
+    x: nodes.map(n => n.x),
+    y: nodes.map(n => n.y),
+    text: nodes.map(n => n.id),
+    textposition: "middle center",
+    marker: {
+      size: 58,
+      color: "rgba(255,255,255,0.95)",
+      line: {
+        color: "black",
+        width: 2
+      }
+    },
+    textfont: {
+      size: 10,
+      color: "black"
+    },
+    hovertemplate: "%{text}<extra></extra>",
+    showlegend: false
+  };
+
+  const layout = {
+    margin: { l: 5, r: 5, t: 5, b: 5 },
+    paper_bgcolor: "rgba(0,0,0,0)",
+    plot_bgcolor: "rgba(0,0,0,0)",
+    xaxis: {
+      visible: false,
+      range: [0, 1],
+      fixedrange: true
+    },
+    yaxis: {
+      visible: false,
+      range: [0, 0.9],
+      fixedrange: true
+    },
+    annotations: links.map(([a, b]) => {
+      const A = nodeById[a];
+      const B = nodeById[b];
+
+      return {
+        x: B.x,
+        y: B.y,
+        ax: A.x,
+        ay: A.y,
+        xref: "x",
+        yref: "y",
+        axref: "x",
+        ayref: "y",
+        showarrow: true,
+        arrowhead: 2,
+        arrowsize: 1,
+        arrowwidth: 1.5,
+        arrowcolor: "rgba(0,0,0,0.45)",
+        opacity: 0.55
+      };
+    })
+  };
+
+  Plotly.react(
+    "plotSystemMap",
+    [...edgeTraces, nodeTrace],
+    layout,
+    { displayModeBar:false, responsive:true }
+  );
 }
 
 function setSinglePlotInfoKeys(){
@@ -3019,6 +3196,11 @@ el("plotSelect").addEventListener("change", (e) => {
 // toggle all plots
 el("showAllPlotsBtn").addEventListener("click", () => {
   setAllPlotsMode(!allPlotsMode);
+});
+
+el("sideViewToggle").addEventListener("click", () => {
+  sideView = sideView === "donut" ? "system" : "donut";
+  updateSideView();
 });
 
 // initial
