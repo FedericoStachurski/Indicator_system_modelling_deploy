@@ -527,7 +527,7 @@
 
           <div class="row">
             <div class="labelrow"><span><b>Pop growth</b></span><span id="popLabel" class="small"></span></div>
-            <input id="pop" type="range" min="0" max="0.1" step="0.005" value="0.02">
+            <input id="pop" type="range" min="0" max="0.1" step="0.0005" value="0.02">
           </div>
 
           <div class="row">
@@ -539,21 +539,21 @@
             <div class="labelrow"><span><b>Inflation rate (δI)</b></span><span id="inflLabel" class="small"></span></div>
             <input id="infl" type="range" min="0" max="0.08" step="0.001" value="0.017">
           </div>
-
+<!-- 
           <div class="row">
             <div class="labelrow"><span><b>Households/Population θ</b></span><span id="thetaLabel" class="small"></span></div>
             <input id="theta" type="range" min="0" max="2" step="0.01" value="0.51">
-          </div>
+          </div> -->
 
           <div class="row">
             <div class="labelrow"><span><b>Reinvestment η</b></span><span id="etaLabel" class="small"></span></div>
             <input id="eta" type="range" min="0" max="1" step="0.005" value="0.05">
           </div>
 
-          <div class="row">
+          <!-- <div class="row">
             <div class="labelrow"><span><b>Investment scale ѵ</b></span><span id="nuLabel" class="small"></span></div>
             <input id="nu" type="number" min="1" step="1000000" value="6.375e10">
-          </div>
+          </div> -->
 
           <div class="row">
             <div class="labelrow"><span><b>Redistribution rate (δλ)</b></span><span id="lamRateLabel" class="small"></span></div>
@@ -609,6 +609,8 @@
             <b>Baseline</b> is always included as a fixed baseline (not editable).
             <br>
             Baseline emissions factors fixed: <b>E_H = 1.6</b>, <b>E_S = 1.28</b> tCO₂eq/(ha·yr)
+            <br>
+            Reinvestment paramters fixed: <b>θ = 0.51</b> Households/People, <b>ν = 6.375e10 £</b> 
           </div>
 
           <div id="landsContainer" class="grid-controls" style="grid-template-columns: 1fr 1fr; margin-top:8px;"></div>
@@ -623,6 +625,7 @@
 const el = (id) => document.getElementById(id);
 const deepClone = (obj) => (window.structuredClone ? structuredClone(obj) : JSON.parse(JSON.stringify(obj)));
 const THETA_FIXED = 0.51;
+const NU_FIXED = 6.375e10;
 
 let lastRenderState = null;
 
@@ -818,7 +821,7 @@ function defaultScenarioState(index){
       tmax: 50, pop: 0.02, n: 300, selectedPlot: "none",
       donutCmap: "Viridis", rollOn: "off", rollYears: 3,
       muGrow: 0.014, infl: 0.017, lamRate: 0.001,
-      theta: 0.51, eta: 0.05, nu: 6.375e10,
+      eta: 0.05,
       allPlotsMode: false,
     },
     lands: []
@@ -861,9 +864,8 @@ function pullUIIntoActiveScenario(){
   sc.globals.infl   = +el("infl").value;
   sc.globals.lamRate= +el("lamRate").value;
   // sc.globals.theta  = +el("theta").value;
-  sc.globals.theta  = +el("theta").value;
   sc.globals.eta    = +el("eta").value;
-  sc.globals.nu     = Math.max(1, +el("nu").value || 6.375e10);
+  // sc.globals.nu     = Math.max(1, +el("nu").value || 6.375e10);
   sc.globals.allPlotsMode = allPlotsMode;
 
   sc.lands = deepClone(landsState);
@@ -892,9 +894,9 @@ function pushScenarioToUI(idx){
   el("infl").value   = sc.globals.infl ?? 0.017;
   el("lamRate").value= sc.globals.lamRate ?? 0.001;
   // el("theta").value  = sc.globals.theta ?? 0.51;
-  sc.globals.theta = sc.globals.theta ?? THETA_FIXED;
+  // sc.globals.theta = sc.globals.theta ?? THETA_FIXED;
   el("eta").value    = sc.globals.eta ?? 0.05;
-  el("nu").value     = sc.globals.nu ?? 6.375e10;
+  // el("nu").value     = sc.globals.nu ?? 6.375e10;
 
   allPlotsMode = !!sc.globals.allPlotsMode;
   setAllPlotsMode(allPlotsMode, false);
@@ -943,7 +945,10 @@ function setGlobalLabels(){
     el("thetaLabel").textContent = (+el("theta").value).toFixed(2);
   }
   el("etaLabel").textContent    = (+el("eta").value).toFixed(3);
-  el("nuLabel").textContent     = Number(+el("nu").value || 0).toExponential(2);
+  if (el("nuLabel") && el("nu")) {
+    el("nuLabel").textContent     = Number(+el("nu").value || 0).toExponential(2);
+  }
+  // el("nuLabel").textContent     = Number(+el("nu").value || 0).toExponential(2);
 }
 
 function updateShareTotal(){
@@ -1064,7 +1069,7 @@ function renderLands(){
       <div id="fertBlock_${i}">
         <div class="row">
           <div class="labelrow"><span>F</span><span id="FLabel_${i}" class="small"></span></div>
-          <input id="F_${i}" type="range" min="0" max="3" step="0.05" value="${land.F}">
+          <input id="F_${i}" type="range" min="0" max="3" step="0.001" value="${land.F}">
         </div>
 
         <div class="row">
@@ -1301,7 +1306,7 @@ function renderDonutWithHeat(values){
   const labels = [
     "Soil health","Production", // "Population","Calorie demand", "Real income",
     "Self-sufficiency","Degradation",
-    "Total emissions","Food price index","Food security"
+    "Total emissions","Food price index","Food insecurity"
   ];
 
   const cmapName = scenarios[activeScenario]?.globals?.donutCmap || "Viridis";
@@ -1714,7 +1719,7 @@ function renderAllPlots(data){
   {
     const obj = baseTwoTrace(
       smoothSeries(bauData.population, t),
-      hasScenarioData ? smoothSeries(scenarioData.population, t) : null,
+      null,
       "Population",
       "People"
     );
@@ -1724,7 +1729,7 @@ function renderAllPlots(data){
   {
     const obj = baseTwoTrace(
       smoothSeries(bauData.food_consumption, t),
-      hasScenarioData ? smoothSeries(scenarioData.food_consumption, t) : null,
+      null,
       "Calorie demand",
       "kcal/yr"
     );
@@ -1744,7 +1749,7 @@ function renderAllPlots(data){
   {
     const obj = baseTwoTrace(
       smoothSeries(bauData.average_real_income, t),
-      hasScenarioData ? smoothSeries(scenarioData.average_real_income, t) : null,
+      null,
       "Real income",
       "£/yr"
     );
@@ -1822,7 +1827,7 @@ function renderAllPlots(data){
   if (bauData.palma_ratio && el("mini_palma")){
     const obj = baseTwoTrace(
       smoothSeries(bauData.palma_ratio, t),
-      hasScenarioData ? smoothSeries(scenarioData.palma_ratio, t) : null,
+      null,
       "Palma ratio",
       "R(t)"
     );
@@ -1832,7 +1837,7 @@ function renderAllPlots(data){
   if (bauData.gini_coefficient && el("mini_gini")){
     const obj = baseTwoTrace(
       smoothSeries(bauData.gini_coefficient, t),
-      hasScenarioData ? smoothSeries(scenarioData.gini_coefficient, t) : null,
+      null,
       "Gini coefficient",
       "G(t)",
       { yRange:[0,1] }
@@ -2054,7 +2059,8 @@ function buildPayloadFromLands(lands){
 
     theta: THETA_FIXED,
     eta: +el("eta").value,
-    nu: Math.max(1, +el("nu").value || 6.375e10),
+    // nu: Math.max(1, +el("nu").value || 6.375e10),
+    nu: NU_FIXED,
 
     lands: lands.map(l => {
       const scenario_name = l.scenario_name || "Fertiliser parabola";
@@ -2608,18 +2614,63 @@ async function runSim(){
   }
   else if (selectedPlot === "pop"){
     setPdfControlsVisible(false);
-    const traces = [{x:t, y: smoothSeries(bauData.population, t), type:"scatter", name:"Baseline", line:{width:6, color:"black"}}];
-    if (hasScenarioData) traces.push({x:t, y: smoothSeries(scenarioData.population, t), type:"scatter", name:"Scenario", line:{width:6}});
-    Plotly.react("plotMain", traces, commonLayout("Population","People"), {displayModeBar:false, responsive:true});
-    lastRenderState.visiblePlots.push({ key:"pop", title:"Population", x:t.slice(), series: traces.map(tr => ({ name: tr.name, y: tr.y.slice() })) });
+
+    const traces = [
+      {
+        x: t,
+        y: smoothSeries(bauData.population, t),
+        type: "scatter",
+        name: "Population",
+        line: { width: 6, color: "black" }
+      }
+    ];
+
+    Plotly.react(
+      "plotMain",
+      traces,
+      commonLayout("Population", "People"),
+      { displayModeBar:false, responsive:true }
+    );
+
+    visiblePlots.push({
+    key: "pop",
+    title: "Population",
+    x: t.slice(),
+    series: [
+      { name: "Population", y: smoothSeries(bauData.population, t).slice() }
+    ]
+  });
   }
     else if (selectedPlot === "cal_demand"){
-    setPdfControlsVisible(false);
-    const traces = [{x:t, y: smoothSeries(bauData.food_consumption, t), type:"scatter", name:"Baseline", line:{width:6, color:"black"}}];
-    if (hasScenarioData) traces.push({x:t, y: smoothSeries(scenarioData.food_consumption, t), type:"scatter", name:"Scenario", line:{width:6}});
-    Plotly.react("plotMain", traces, commonLayout("Calorie demand","kcal/yr"), {displayModeBar:false, responsive:true});
-    lastRenderState.visiblePlots.push({ key:"cal_demand", title:"Calorie demand", x:t.slice(), series: traces.map(tr => ({ name: tr.name, y: tr.y.slice() })) });
-  }
+      setPdfControlsVisible(false);
+
+      const traces = [
+        {
+          x: t,
+          y: smoothSeries(bauData.food_consumption, t),
+          type: "scatter",
+          name: "Calorie demand",
+          line: { width: 6, color: "black" }
+        }
+      ];
+
+      Plotly.react(
+        "plotMain",
+        traces,
+        commonLayout("Calorie demand", "kcal/yr"),
+        { displayModeBar:false, responsive:true }
+      );
+
+      lastRenderState.visiblePlots.push({
+        key: "cal_demand",
+        title: "Calorie demand",
+        x: t.slice(),
+        series: traces.map(tr => ({
+          name: tr.name,
+          y: tr.y.slice()
+        }))
+      });
+    }
   else if (selectedPlot === "ssr"){
     setPdfControlsVisible(false);
     const traces = [{x:t, y: smoothSeries(bauData.self_sufficiency_ratio, t), type:"scatter", name:"Baseline", line:{width:6, color:"black"}}];
@@ -2629,10 +2680,33 @@ async function runSim(){
   }
   else if (selectedPlot === "inc"){
     setPdfControlsVisible(false);
-    const traces = [{x:t, y: smoothSeries(bauData.average_real_income, t), type:"scatter", name:"Baseline", line:{width:6, color:"black"}}];
-    if (hasScenarioData) traces.push({x:t, y: smoothSeries(scenarioData.average_real_income, t), type:"scatter", name:"Scenario", line:{width:6}});
-    Plotly.react("plotMain", traces, commonLayout("Real income","£ (real)"), {displayModeBar:false, responsive:true});
-    lastRenderState.visiblePlots.push({ key:"inc", title:"Real income", x:t.slice(), series: traces.map(tr => ({ name: tr.name, y: tr.y.slice() })) });
+
+    const traces = [
+      {
+        x: t,
+        y: smoothSeries(bauData.average_real_income, t),
+        type: "scatter",
+        name: "Real income",
+        line: { width: 6, color: "black" }
+      }
+    ];
+
+    Plotly.react(
+      "plotMain",
+      traces,
+      commonLayout("Real income", "£ (real)"),
+      { displayModeBar:false, responsive:true }
+    );
+
+    lastRenderState.visiblePlots.push({
+      key: "inc",
+      title: "Real income",
+      x: t.slice(),
+      series: traces.map(tr => ({
+        name: tr.name,
+        y: tr.y.slice()
+      }))
+    });
   }
   else if (selectedPlot === "deg"){
   setPdfControlsVisible(false);
@@ -2765,29 +2839,79 @@ async function runSim(){
   }
   else if (selectedPlot === "palma"){
     setPdfControlsVisible(false);
-    const yB = bauData.palma_ratio;
-    const yS = hasScenarioData ? scenarioData.palma_ratio : null;
-    if (!yB) { Plotly.purge("plotMain"); return; }
 
-    const traces = [{x:t, y:smoothSeries(yB, t), type:"scatter", name:"Baseline", line:{width:6, color:"black"}}];
-    if (yS) traces.push({x:t, y:smoothSeries(yS, t), type:"scatter", name:"Scenario", line:{width:6}});
-    Plotly.react("plotMain", traces, commonLayout("Palma ratio","R(t)"), {displayModeBar:false, responsive:true});
-    lastRenderState.visiblePlots.push({ key:"palma", title:"Palma ratio", x:t.slice(), series: traces.map(tr => ({ name: tr.name, y: tr.y.slice() })) });
+    const yB = bauData.palma_ratio;
+    if (!yB) {
+      Plotly.purge("plotMain");
+      return;
+    }
+
+    const traces = [
+      {
+        x: t,
+        y: smoothSeries(yB, t),
+        type: "scatter",
+        name: "Palma ratio",
+        line: { width: 6, color: "black" }
+      }
+    ];
+
+    Plotly.react(
+      "plotMain",
+      traces,
+      commonLayout("Palma ratio", "R(t)"),
+      { displayModeBar:false, responsive:true }
+    );
+
+    lastRenderState.visiblePlots.push({
+      key: "palma",
+      title: "Palma ratio",
+      x: t.slice(),
+      series: traces.map(tr => ({
+        name: tr.name,
+        y: tr.y.slice()
+      }))
+    });
   }
   else if (selectedPlot === "gini"){
     setPdfControlsVisible(false);
-    const yB = bauData.gini_coefficient;
-    const yS = hasScenarioData ? scenarioData.gini_coefficient : null;
-    if (!yB) { Plotly.purge("plotMain"); return; }
 
-    const layout = commonLayout("Gini coefficient","G(t)");
+    const yB = bauData.gini_coefficient;
+    if (!yB) {
+      Plotly.purge("plotMain");
+      return;
+    }
+
+    const layout = commonLayout("Gini coefficient", "G(t)");
     layout.yaxis.range = [0, 1];
 
-    const traces = [{x:t, y:smoothSeries(yB, t), type:"scatter", name:"Baseline", line:{width:6, color:"black"}}];
-    if (yS) traces.push({x:t, y:smoothSeries(yS, t), type:"scatter", name:"Scenario", line:{width:6}});
-    Plotly.react("plotMain", traces, layout, {displayModeBar:false, responsive:true});
-    lastRenderState.visiblePlots.push({ key:"gini", title:"Gini coefficient", x:t.slice(), series: traces.map(tr => ({ name: tr.name, y: tr.y.slice() })) });
-  }
+    const traces = [
+      {
+        x: t,
+        y: smoothSeries(yB, t),
+        type: "scatter",
+        name: "Gini coefficient",
+        line: { width: 6, color: "black" }
+      }
+    ];
+
+    Plotly.react(
+      "plotMain",
+      traces,
+      layout,
+      { displayModeBar:false, responsive:true }
+    );
+
+    lastRenderState.visiblePlots.push({
+      key: "gini",
+      title: "Gini coefficient",
+      x: t.slice(),
+      series: traces.map(tr => ({
+        name: tr.name,
+        y: tr.y.slice()
+      }))
+    });
+}
   else if (selectedPlot === "food_price"){
     setPdfControlsVisible(false);
     const yB = bauData.food_price_index;
@@ -2873,7 +2997,7 @@ function triggerSim(){
 }
 
 // global sliders
-["tmax","pop","n","muGrow","infl","lamRate","eta","nu"].forEach((id) => el(id).addEventListener("input", triggerSim));
+["tmax","pop","n","muGrow","infl","lamRate","eta"].forEach((id) => el(id).addEventListener("input", triggerSim));
 
 // rolling controls
 el("rollOn").addEventListener("change", triggerSim);
