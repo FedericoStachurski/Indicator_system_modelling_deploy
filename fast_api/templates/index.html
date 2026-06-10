@@ -251,64 +251,153 @@
       padding-right: 6px;
     }
 
+  /* --- info button --- */
+    .card{
+      position: relative;
+    }
+
+    .plot-card-info-btn{
+      position: absolute;
+      top: 18px;
+      right: 18px;
+      z-index: 20;
+    }
+
   /* --- all plots mode --- */
-  .app.all-plots .main{
-    grid-template-columns: 1fr;
-  }
+    .app.all-plots .main{
+      grid-template-columns: 1fr;
+    }
 
-  .app.all-plots .side{
-    display: none;
-  }
+    .app.all-plots .side{
+      display: none;
+    }
 
-  .app.all-plots .content{
-    grid-template-rows: 1fr;
-    min-height: 0;
-  }
+    .app.all-plots .content{
+      grid-template-rows: 1fr !important;
+      min-height: 0;
+      height: 100%;
+    }
 
-  #allPlotsCard{
-    display: none;
-    overflow-y: auto;
-    overflow-x: hidden;
-    padding: 10px;
-    height: 100%;
-    min-height: 0;
-  }
+    #allPlotsCard{
+      display: none;
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding: 10px;
+      height: 100%;
+      min-height: 0;
+    }
 
-  .app.all-plots #soilCard,
-  .app.all-plots #secondaryCard{
-    display: none !important;
-  }
+    .app.all-plots #soilCard,
+    .app.all-plots #secondaryCard{
+      display: none !important;
+    }
 
-  .app.all-plots #allPlotsCard{
-    display: block;
-  }
+    .app.all-plots #allPlotsCard{
+      display: block;
+      grid-row: 1 / -1;
+      height: 100%;
+      min-height: 0;
+    }
 
-  .all-plots-grid{
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 12px;
-    width: 100%;
-    height: auto;
-    align-items: start;
-  }
+    .all-plots-grid{
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      width: 100%;
+      height: auto;
+      align-items: start;
+    }
 
-  .mini-plot-card{
-    border: 1px solid rgba(0,0,0,0.14);
-    border-radius: 10px;
-    background: rgba(255,255,255,0.65);
-    box-shadow: 0 1px 6px rgba(0,0,0,0.05);
-    padding: 6px;
-    min-width: 0;
-    min-height: 0;
-    height: 280px;
-    overflow: hidden;
-  }
+    .mini-plot-card{
+      border: 1px solid rgba(0,0,0,0.14);
+      border-radius: 10px;
+      background: rgba(255,255,255,0.65);
+      box-shadow: 0 1px 6px rgba(0,0,0,0.05);
+      padding: 6px;
+      min-width: 0;
+      min-height: 0;
+      height: 280px;
+      overflow: hidden;
 
-  .mini-plot{
-    width: 100%;
-    height: 100%;
-    min-height: 0;
-  }
+      display: grid;
+      grid-template-rows: auto 1fr;
+    }
+
+    .mini-plot-titlebar{
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      min-height: 24px;
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .plot-info-btn{
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      border: 1px solid rgba(0,0,0,0.35);
+      background: rgba(255,255,255,0.85);
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 800;
+      line-height: 16px;
+      padding: 0;
+    }
+
+    .plot-info-btn:hover{
+      background: #222;
+      color: white;
+    }
+
+    .mini-plot{
+      width: 100%;
+      height: 100%;
+      min-height: 0;
+    }
+
+    .plot-info-overlay{
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0,0,0,0.28);
+      z-index: 2000;
+    }
+
+    .plot-info-overlay.open{
+      display: flex;
+    }
+
+    .plot-info-box{
+      width: min(520px, 92vw);
+      background: rgba(255,255,255,0.96);
+      border: 1px solid rgba(0,0,0,0.18);
+      border-radius: 14px;
+      box-shadow: 0 10px 35px rgba(0,0,0,0.25);
+      padding: 16px;
+    }
+
+    .plot-info-head{
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+
+    .plot-info-title{
+      font-weight: 800;
+      font-size: 16px;
+    }
+
+    .plot-info-text{
+      font-size: 13px;
+      line-height: 1.45;
+      color: #222;
+    }
 
   @media (max-width: 1400px){
     .all-plots-grid{
@@ -360,7 +449,7 @@
           <option value="palma">Palma ratio</option>
           <option value="gini">Gini coefficient</option>
           <option value="food_price">Food price index</option>
-          <option value="food_sec">Food security</option>
+          <option value="food_insecurity">Food insecurity</option>
           <option value="inc_pdf">Income distribution (PDF)</option>
         </select>
 
@@ -375,11 +464,25 @@
     <div class="main">
       <div class="content" id="content">
         <div class="card" id="soilCard">
+          <button id="soilInfoBtn"
+                  class="plot-card-info-btn plot-info-btn"
+                  type="button"
+                  data-info-key="soil"
+                  aria-label="About Soil">
+            i
+          </button>
           <div id="plotSoil" class="plot"></div>
         </div>
 
-        <div class="card" id="secondaryCard">
-          <div id="plotMain" class="plot"></div>
+      <div class="card" id="secondaryCard">
+        <button id="mainInfoBtn"
+                class="plot-card-info-btn plot-info-btn"
+                type="button"
+                data-info-key="prod"
+                aria-label="About selected plot">
+          i
+        </button>
+        <div id="plotMain" class="plot"></div>
 
           <div id="pdfControls">
             <div class="pdf-row">
@@ -546,7 +649,7 @@ const SIGN = {
   // harvest:+1,
   emis: -1,
   food_price: -1,
-  food_sec: +1,
+  food_insecurity: +1,
 };
 
 function mean(arr){
@@ -1168,8 +1271,8 @@ const commonLayout = (title, ytitle) => ({
 
 function smallLayout(title, ytitle){
   return {
-    title: { text: title, font: { size: 16 } },
-    margin: { l: 42, r: 8, t: 34, b: 36 },
+    title: { text: "", font: { size: 1 } },
+    margin: { l: 42, r: 8, t: 10, b: 36 },
     paper_bgcolor: "rgba(0,0,0,0)",
     plot_bgcolor: "rgba(0,0,0,0)",
     xaxis: {
@@ -1275,6 +1378,28 @@ function renderDonutWithHeat(values){
   Plotly.react("plotDonut", [pie, colorbarTrace], layout, { displayModeBar:false, responsive:true });
 }
 
+function setSinglePlotInfoKeys(){
+  const soilBtn = el("soilInfoBtn");
+  if (soilBtn){
+    soilBtn.dataset.infoKey = "soil";
+    soilBtn.title = "About Soil";
+  }
+
+  const mainBtn = el("mainInfoBtn");
+  if (!mainBtn) return;
+
+  if (selectedPlot === "none"){
+    mainBtn.style.display = "none";
+    return;
+  }
+
+  const info = PLOT_INFO[selectedPlot] || { label: selectedPlot };
+
+  mainBtn.dataset.infoKey = selectedPlot;
+  mainBtn.title = `About ${info.label}`;
+  mainBtn.style.display = "block";
+}
+
 function showSecondary(show){
   const card = el("secondaryCard");
   const content = el("content");
@@ -1327,9 +1452,136 @@ function setAllPlotsMode(on, rerun = true){
   if (rerun) runSim();
 }
 
-function makeMiniPlotCard(id){
+ // info descriptors
+
+const PLOT_INFO = {
+  soil: {
+    label: "Soil",
+    text: "Soil health index through time. Higher values indicate healthier soil. The curve changes according to recovery, degradation, and the cultivation cycle."
+  },
+  prod: {
+    label: "Production",
+    text: "Food production over time. Soil production P~ is the baseline land-driven production. Boosted production P includes the reinvestment multiplier."
+  },
+  reinvest: {
+    label: "Reinvestment J(t)",
+    text: "Reinvestment potential generated by the model feedback equation. It affects realised production through the multiplier 1 + J(t)/ν."
+  },
+  pop: {
+    label: "Population",
+    text: "Population trajectory through time. This is used to compute total calorie demand."
+  },
+  cal_demand: {
+    label: "Calorie demand",
+    text: "Total food demand in calories per year, computed from population and calories required per person."
+  },
+  ssr: {
+    label: "Self-sufficiency",
+    text: "Percentage of calorie demand met by domestic production. Higher values indicate greater food self-sufficiency."
+  },
+  inc: {
+    label: "Real income",
+    text: "Average real income through time. This is used with the income distribution to estimate affordability and inequality indicators."
+  },
+  deg: {
+    label: "Degradation",
+    text: "Land degradation pressure through time. In this model, degradation can be constant or linked to fertiliser and the cultivation cycle B(t)."
+  },
+  emis: {
+    label: "Net emissions",
+    text: "Net agricultural emissions from cultivation and cover/fallow phases, weighted by land area."
+  },
+  infl: {
+    label: "Inflation index",
+    text: "Inflation index I(t). This affects food price and reinvestment calculations."
+  },
+  lambda: {
+    label: "Redistribution λ",
+    text: "Redistribution parameter controlling changes in the income distribution through time."
+  },
+  palma: {
+    label: "Palma ratio",
+    text: "Inequality indicator comparing the income share of the top 10% with the bottom 40%. Higher values indicate greater inequality."
+  },
+  gini: {
+    label: "Gini coefficient",
+    text: "Income inequality index ranging from 0 to 1. Higher values indicate greater inequality."
+  },
+  food_price: {
+    label: "Food price index",
+    text: "Food price pressure indicator derived from self-sufficiency and inflation. Lower values generally indicate better food affordability."
+  },
+  food_insecurity: {
+    label: "Food Insecurity",
+    text: "Food Insecurity or affordability indicator combining food price pressure with low-income thresholds."
+  },
+  inc_pdf: {
+    label: "Income distribution",
+    text: "Income probability density function at a selected time point. It shows how income is distributed across the population."
+  }
+};
+
+function showPlotInfo(key){
+  const info = PLOT_INFO[key] || {
+    label: key,
+    text: "No description available for this plot yet."
+  };
+
+  let overlay = el("plotInfoOverlay");
+
+  if (!overlay){
+    overlay = document.createElement("div");
+    overlay.id = "plotInfoOverlay";
+    overlay.className = "plot-info-overlay";
+    overlay.innerHTML = `
+      <div class="plot-info-box">
+        <div class="plot-info-head">
+          <div id="plotInfoTitle" class="plot-info-title"></div>
+          <button id="plotInfoClose" class="btn" type="button">Close</button>
+        </div>
+        <div id="plotInfoText" class="plot-info-text"></div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) overlay.classList.remove("open");
+    });
+
+    el("plotInfoClose").addEventListener("click", () => {
+      overlay.classList.remove("open");
+    });
+  }
+
+  el("plotInfoTitle").textContent = info.label;
+  el("plotInfoText").textContent = info.text;
+  overlay.classList.add("open");
+}
+
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest(".plot-info-btn");
+  if (!btn) return;
+
+  e.preventDefault();
+  e.stopPropagation();
+
+  showPlotInfo(btn.dataset.infoKey);
+});
+
+function makeMiniPlotCard(id, key){
+  const info = PLOT_INFO[key] || { label: key };
+
   return `
     <div class="mini-plot-card">
+      <div class="mini-plot-titlebar">
+        <span>${info.label}</span>
+        <button class="plot-info-btn"
+                type="button"
+                data-info-key="${key}"
+                aria-label="About ${info.label}">
+          i
+        </button>
+      </div>
       <div id="${id}" class="mini-plot"></div>
     </div>
   `;
@@ -1340,7 +1592,7 @@ function getFoodPriceSeries(data){
 }
 
 function getFoodSecuritySeries(data){
-  return data?.food_security_index ?? data?.food_insecurity_index ?? null;
+  return data?.food_insecurity_index ?? data?.food_insecurity_index ?? null;
 }
 
 function getBoostedProductionSeries(data){
@@ -1396,11 +1648,11 @@ function renderAllPlots(data){
   ];
 
   if (bauJ) plotDefs.push({ key: "reinvest" });
-  if (bauFoodPrice) plotDefs.push({ key: "food_price" });
-  if (bauFoodSec) plotDefs.push({ key: "food_sec" });
+  if (bauData.food_price_index) plotDefs.push({ key: "food_price" });
+  if (bauData.food_insecurity_index) plotDefs.push({ key: "food_insecurity" });
   if (incX && incPDF && incPDF.length) plotDefs.push({ key: "inc_pdf" });
 
-  grid.innerHTML = plotDefs.map(p => makeMiniPlotCard(`mini_${p.key}`)).join("");
+  grid.innerHTML = plotDefs.map(p => makeMiniPlotCard(`mini_${p.key}`, p.key)).join("");
 
   function baseTwoTrace(bauY, scY, title, ytitle, opts = {}){
     const traces = [
@@ -1598,14 +1850,14 @@ function renderAllPlots(data){
     Plotly.react("mini_food_price", obj.traces, obj.layout, {displayModeBar:false, responsive:true});
   }
 
-  if (bauFoodSec && el("mini_food_sec")){
+  if (bauData.food_insecurity_index && el("mini_food_insecurity")){
     const obj = baseTwoTrace(
-      smoothSeries(bauFoodSec, t),
-      scFoodSec ? smoothSeries(scFoodSec, t) : null,
-      "Food security",
+      smoothSeries(bauData.food_insecurity_index, t),
+      hasScenarioData && scenarioData.food_insecurity_index ? smoothSeries(scenarioData.food_insecurity_index, t) : null,
+      "Food insecurity index",
       "Index"
     );
-    Plotly.react("mini_food_sec", obj.traces, obj.layout, {displayModeBar:false, responsive:true});
+    Plotly.react("mini_food_insecurity", obj.traces, obj.layout, {displayModeBar:false, responsive:true});
   }
 
   if (incX && incPDF && incPDF.length && el("mini_inc_pdf")){
@@ -1966,8 +2218,8 @@ async function runSim(){
   const bau_food_price = getFoodPriceSeries(bauData);
   const sc_food_price  = hasScenarioData ? getFoodPriceSeries(scenarioData) : bau_food_price;
 
-  const bau_food_sec = getFoodSecuritySeries(bauData);
-  const sc_food_sec  = hasScenarioData ? getFoodSecuritySeries(scenarioData) : bau_food_sec;
+  const bau_food_insecurity = getFoodSecuritySeries(bauData);
+  const sc_food_insecurity  = hasScenarioData ? getFoodSecuritySeries(scenarioData) : bau_food_insecurity;
 
   const donutValues = [
     signedPctImprovementAverage(sc_soil,  bau_soil,  SIGN.soil),
@@ -1980,7 +2232,7 @@ async function runSim(){
     // signedPctImprovementEnd(sc_harv,  bauData.total_harvest, SIGN.harvest),
     signedPctImprovementAverage(sc_emis,  bau_emis, SIGN.emis),
     signedPctImprovementAverage(sc_food_price, bau_food_price, SIGN.food_price),
-    signedPctImprovementAverage(sc_food_sec, bau_food_sec, SIGN.food_sec),
+    signedPctImprovementAverage(sc_food_insecurity, bau_food_insecurity, SIGN.food_insecurity),
   ].map(v => clamp(v, DONUT_CMIN, DONUT_CMAX));
 
   renderDonutWithHeat(donutValues);
@@ -2201,26 +2453,26 @@ async function runSim(){
       });
     }
 
-    if (bau_food_price){
+    if (bauData.food_price_index){
       visiblePlots.push({
         key: "food_price",
         title: "Food price index",
         x: t.slice(),
         series: [
-          { name: "Baseline", y: smoothSeries(bau_food_price, t).slice() },
-          ...(sc_food_price ? [{ name: "Scenario", y: smoothSeries(sc_food_price, t).slice() }] : [])
+          { name: "Baseline", y: smoothSeries(bauData.food_price_index, t).slice() },
+          ...(hasScenarioData && scenarioData.food_price_index ? [{ name: "Scenario", y: smoothSeries(scenarioData.food_price_index, t).slice() }] : [])
         ]
       });
     }
 
-    if (bau_food_sec){
+    if (bauData.food_insecurity_index){
       visiblePlots.push({
-        key: "food_sec",
-        title: "Food security",
+        key: "food_insecurity",
+        title: "Food insecurity index",
         x: t.slice(),
         series: [
-          { name: "Baseline", y: smoothSeries(bau_food_sec, t).slice() },
-          ...(sc_food_sec ? [{ name: "Scenario", y: smoothSeries(sc_food_sec, t).slice() }] : [])
+          { name: "Baseline", y: smoothSeries(bauData.food_insecurity_index, t).slice() },
+          ...(hasScenarioData && scenarioData.food_insecurity_index ? [{ name: "Scenario", y: smoothSeries(scenarioData.food_insecurity_index, t).slice() }] : [])
         ]
       });
     }
@@ -2242,7 +2494,7 @@ async function runSim(){
       const ids = [
         "mini_soil","mini_prod","mini_reinvest","mini_pop","mini_cal_demand","mini_ssr","mini_inc",
         "mini_deg","mini_harvest","mini_emis","mini_infl","mini_lambda",
-        "mini_palma","mini_gini","mini_food_price","mini_food_sec","mini_inc_pdf"
+        "mini_palma","mini_gini","mini_food_price","mini_food_insecurity","mini_inc_pdf"
       ];
       ids.forEach(id => {
         const node = document.getElementById(id);
@@ -2252,6 +2504,8 @@ async function runSim(){
 
     return;
   }
+
+  setSinglePlotInfoKeys();
 
   // Soil plot
   const soilTraces = [];
@@ -2545,16 +2799,16 @@ async function runSim(){
     Plotly.react("plotMain", traces, commonLayout("Food price index","£"), {displayModeBar:false, responsive:true});
     lastRenderState.visiblePlots.push({ key:"food_price", title:"Food price index", x:t.slice(), series: traces.map(tr => ({ name: tr.name, y: tr.y.slice() })) });
   }
-  else if (selectedPlot === "food_sec"){
+  else if (selectedPlot === "food_insecurity"){
     setPdfControlsVisible(false);
-    const yB = bauData.food_security_index;
-    const yS = hasScenarioData ? scenarioData.food_security_index : null;
+    const yB = bauData.food_insecurity_index;
+    const yS = hasScenarioData ? scenarioData.food_insecurity_index : null;
     if (!yB) { Plotly.purge("plotMain"); return; }
 
     const traces = [{x:t, y:smoothSeries(yB, t), type:"scatter", name:"Baseline", line:{width:6, color:"black"}}];
     if (yS) traces.push({x:t, y:smoothSeries(yS, t), type:"scatter", name:"Scenario", line:{width:6}});
-    Plotly.react("plotMain", traces, commonLayout("Food security index","Index %"), {displayModeBar:false, responsive:true});
-    lastRenderState.visiblePlots.push({ key:"food_sec", title:"Food security index", x:t.slice(), series: traces.map(tr => ({ name: tr.name, y: tr.y.slice() })) });
+    Plotly.react("plotMain", traces, commonLayout("Food insecurity index","Index %"), {displayModeBar:false, responsive:true});
+    lastRenderState.visiblePlots.push({ key:"food_insecurity", title:"Food insecurity index", x:t.slice(), series: traces.map(tr => ({ name: tr.name, y: tr.y.slice() })) });
   }
   else if (selectedPlot === "inc_pdf"){
     if (!incX || !incPDF || !incPDF.length) {
@@ -2657,7 +2911,7 @@ window.addEventListener("resize", () => {
       "mini_soil","mini_prod","mini_reinvest","mini_pop","mini_cal_demand","mini_ssr",
       "mini_deg","mini_emis","mini_infl",
       "mini_lambda","mini_palma","mini_gini",
-      "mini_food_price","mini_food_sec","mini_inc_pdf"
+      "mini_food_price","mini_food_insecurity","mini_inc_pdf"
     ];
     ids.forEach(id => {
       const node = document.getElementById(id);

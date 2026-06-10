@@ -104,4 +104,4 @@ class SimResponse(BaseModel):
     income_pdf: Optional[List[List[float]]] = None
 
     food_price_index: Optional[List[float]] = None
-    food_security_index: Optional[List[float]] = None
+    food_insecurity_index: Optional[List[float]] = None

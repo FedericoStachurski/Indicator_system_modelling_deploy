@@ -199,9 +199,9 @@ def run_simulation(req: SimRequest) -> SimResponse:
             if res.food_price_index is not None
             else None
         ),
-        food_security_index=(
-            res.food_security_index.tolist()
-            if res.food_security_index is not None
+        food_insecurity_index=(
+            res.food_insecurity_index.tolist()
+            if res.food_insecurity_index is not None
             else None
         ),
     )

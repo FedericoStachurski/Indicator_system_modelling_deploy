@@ -447,7 +447,7 @@ class SimulationResult:
     income_x: Optional[np.ndarray] = None            # (n_x,)
     income_pdf: Optional[np.ndarray] = None          # (n_times, n_x)
     food_price_index: Optional[np.ndarray] = None   # (n_times,)
-    food_security_index: Optional[np.ndarray] = None  # (n_times,)
+    food_insecurity_index: Optional[np.ndarray] = None  # (n_times,)
 
 # ------------------------------------------------------------
 # Core solver
@@ -821,8 +821,8 @@ def simulate_multi_land(
         * np.maximum(inflation_index, 1e-12)
     )
 
-    # ---- food security index Z(t) ----
-    food_security_index = 100 * food_price_index / np.maximum(income_x20, 1e-12)
+    # ---- food insecurity index Z(t) ----
+    food_insecurity_index = 100 * food_price_index / np.maximum(income_x20, 1e-12)
 
     # ---- weighted soil ----
     if land_fractions_arr.sum() > 0:
@@ -866,5 +866,5 @@ def simulate_multi_land(
         income_x=income_x,
         income_pdf=income_pdf,
         food_price_index=food_price_index,
-        food_security_index=food_security_index,
+        food_insecurity_index=food_insecurity_index,
     )
