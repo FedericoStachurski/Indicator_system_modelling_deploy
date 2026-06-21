@@ -702,6 +702,19 @@ function signedPctImprovementEnd(seriesScenario, seriesBAU, sign=+1){
   return sign * pct;
 }
 
+function cumulativeTrapezoid(y, x) {
+  const n = y.length;
+  const cumulative = new Array(n).fill(0);
+
+  for (let i = 1; i < n; i++) {
+    const dx = x[i] - x[i - 1];
+    const area = 0.5 * (y[i] + y[i - 1]) * dx;
+    cumulative[i] = cumulative[i - 1] + area;
+  }
+
+  return cumulative;
+}
+
 function signedPctImprovementAverage(seriesScenario, seriesBAU, sign=+1){
   if (!seriesScenario || !seriesBAU) return 0;
 
