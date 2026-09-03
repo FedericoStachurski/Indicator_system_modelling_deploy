@@ -839,9 +839,10 @@ const BAU_LAND = {
   zeta: 1.0,
   D0: 1.2,
 
-  omega: 3,
-  tau: 1,
-  phase: 1.0,
+  tau_mode: "fixed",
+  tau: 0.25,
+  mu_tau: 0.25,
+  sigma_tau: 0.02,
 
   EH: 1.6,
   ES: 1.28,
@@ -1015,9 +1016,14 @@ function setLandLabels(i){
   if (el(`zetaLabel_${i}`))  el(`zetaLabel_${i}`).textContent  = landsState[i].zeta.toFixed(2);
   if (el(`D0Label_${i}`))    el(`D0Label_${i}`).textContent    = landsState[i].D0.toFixed(2);
 
-  if (el(`omegaLabel_${i}`)) el(`omegaLabel_${i}`).textContent = `${landsState[i].omega} yrs`;
-  if (el(`tauLabel_${i}`))   el(`tauLabel_${i}`).textContent   = `${landsState[i].tau} yrs`;
-  if (el(`phaseLabel_${i}`)) el(`phaseLabel_${i}`).textContent = landsState[i].phase.toFixed(1);
+  if (el(`tauLabel_${i}`))
+    el(`tauLabel_${i}`).textContent = landsState[i].tau.toFixed(2);
+
+  if (el(`muTauLabel_${i}`))
+    el(`muTauLabel_${i}`).textContent = landsState[i].mu_tau.toFixed(2);
+
+  if (el(`sigmaTauLabel_${i}`))
+    el(`sigmaTauLabel_${i}`).textContent = landsState[i].sigma_tau.toFixed(3);
 
   if (el(`ehLabel_${i}`))    el(`ehLabel_${i}`).textContent    = (+landsState[i].EH).toFixed(2);
   if (el(`esLabel_${i}`))    el(`esLabel_${i}`).textContent    = (+landsState[i].ES).toFixed(2);
@@ -1132,24 +1138,79 @@ function renderLands(){
       </div>
 
       <div style="margin-top:6px; border-top: 1px solid rgba(0,0,0,0.10); padding-top:8px;">
-        <div class="small" style="font-weight:700; margin-bottom:4px;">Cultivation cycle B(t)</div>
-
-        <div class="row">
-          <div class="labelrow"><span>ω (cycle length)</span><span id="omegaLabel_${i}" class="small"></span></div>
-          <input id="omega_${i}" type="range" min="1" max="10" step="1" value="${land.omega}">
+        <div class="small" style="font-weight:700; margin-bottom:4px;">
+          Farming cycle B(t)
         </div>
 
         <div class="row">
-          <div class="labelrow"><span>τ (cover duration)</span><span id="tauLabel_${i}" class="small"></span></div>
-          <input id="tau_${i}" type="range" min="0" max="10" step="1" value="${land.tau}">
+          <div class="labelrow">
+            <span>τ mode</span>
+            <span class="small"></span>
+          </div>
+
+          <select id="tauMode_${i}">
+            <option value="fixed" ${land.tau_mode==="fixed" ? "selected" : ""}>
+              Fixed
+            </option>
+            <option value="sampled" ${land.tau_mode==="sampled" ? "selected" : ""}>
+              Sampled
+            </option>
+          </select>
         </div>
 
-        <div class="row">
-          <div class="labelrow"><span>phase</span><span id="phaseLabel_${i}" class="small"></span></div>
-          <input id="phase_${i}" type="range" min="0" max="10" step="0.5" value="${land.phase}">
+        <div id="tauFixedBlock_${i}">
+          <div class="row">
+            <div class="labelrow">
+              <span>τ (regenerative duration)</span>
+              <span id="tauLabel_${i}" class="small"></span>
+            </div>
+
+            <input
+              id="tau_${i}"
+              type="range"
+              min="0.05"
+              max="0.95"
+              step="0.01"
+              value="${land.tau}">
+          </div>
         </div>
 
-        <div class="small">Degradation applies only when cultivated (B=1).</div>
+        <div id="tauSampleBlock_${i}">
+          <div class="row">
+            <div class="labelrow">
+              <span>μτ</span>
+              <span id="muTauLabel_${i}" class="small"></span>
+            </div>
+
+            <input
+              id="muTau_${i}"
+              type="range"
+              min="0.05"
+              max="0.95"
+              step="0.01"
+              value="${land.mu_tau}">
+          </div>
+
+          <div class="row">
+            <div class="labelrow">
+              <span>στ</span>
+              <span id="sigmaTauLabel_${i}" class="small"></span>
+            </div>
+
+            <input
+              id="sigmaTau_${i}"
+              type="range"
+              min="0.001"
+              max="0.20"
+              step="0.001"
+              value="${land.sigma_tau}">
+          </div>
+        </div>
+
+        <div class="small">
+          B(t)=0.1 during regenerative farming and B(t)=0.9 during intensive farming.
+          The onset phase is sampled independently each year.
+        </div>
       </div>
 
       <div style="margin-top:6px; border-top: 1px solid rgba(0,0,0,0.10); padding-top:8px;">
@@ -1190,15 +1251,26 @@ function renderLands(){
     const zetaInp = el(`zeta_${i}`);
     const D0Inp   = el(`D0_${i}`);
 
-    const omegaInp = el(`omega_${i}`);
-    const tauInp   = el(`tau_${i}`);
-    const phaseInp = el(`phase_${i}`);
+    const tauModeInp  = el(`tauMode_${i}`);
+    const tauInp      = el(`tau_${i}`);
+    const muTauInp    = el(`muTau_${i}`);
+    const sigmaTauInp = el(`sigmaTau_${i}`);
+
+    const tauFixedBlock  = el(`tauFixedBlock_${i}`);
+    const tauSampleBlock = el(`tauSampleBlock_${i}`);
 
     const ehInp = el(`eh_${i}`);
     const esInp = el(`es_${i}`);
 
     const alphaConstRow = el(`alphaConstRow_${i}`);
     const alphaLogBlock = el(`alphaLogisticBlock_${i}`);
+
+    function applyTauVisibility(){
+      const sampled = landsState[i].tau_mode === "sampled";
+
+      tauFixedBlock.style.display = sampled ? "none" : "block";
+      tauSampleBlock.style.display = sampled ? "block" : "none";
+    }
 
     function applyRecoveryVisibility(){
       const isLog = (landsState[i].recovery === "Logistic alpha(S)");
@@ -1208,15 +1280,10 @@ function renderLands(){
     }
 
     function applyScenarioVisibility(){
-      const isFert = (landsState[i].scenario_name === "Fertiliser parabola");
+      const isFert = landsState[i].scenario_name === "Fertiliser parabola";
+
       fertBlock.style.display = isFert ? "block" : "none";
       dConstRow.style.display = isFert ? "none" : "block";
-
-      tauInp.max = String(landsState[i].omega);
-      if (landsState[i].tau > landsState[i].omega) {
-        landsState[i].tau = landsState[i].omega;
-        tauInp.value = String(landsState[i].tau);
-      }
 
       el(`scenLabel_${i}`).textContent = isFert ? "g(F)·B(t)" : "D_const";
     }
@@ -1243,14 +1310,15 @@ function renderLands(){
       landsState[i].zeta = +zetaInp.value;
       landsState[i].D0 = +D0Inp.value;
 
-      landsState[i].omega = +omegaInp.value;
+      landsState[i].tau_mode = tauModeInp.value;
       landsState[i].tau = +tauInp.value;
-      landsState[i].phase = +phaseInp.value;
+      landsState[i].mu_tau = +muTauInp.value;
+      landsState[i].sigma_tau = +sigmaTauInp.value;
+
+      applyTauVisibility();
 
       landsState[i].EH = +ehInp.value;
       landsState[i].ES = +esInp.value;
-
-      if (landsState[i].tau > landsState[i].omega) landsState[i].tau = landsState[i].omega;
 
       applyScenarioVisibility();
 
@@ -1264,12 +1332,15 @@ function renderLands(){
       .forEach(inp => inp.addEventListener("input", updateFromUI));
     recSel.addEventListener("change", updateFromUI);
 
-    [scenSel, FInp, zetaInp, D0Inp, omegaInp, tauInp, phaseInp]
+    [scenSel, FInp, zetaInp, D0Inp, tauInp, muTauInp, sigmaTauInp]
       .forEach(inp => inp.addEventListener("input", updateFromUI));
+
+    tauModeInp.addEventListener("change", updateFromUI);
     scenSel.addEventListener("change", updateFromUI);
 
     applyRecoveryVisibility();
     applyScenarioVisibility();
+    applyTauVisibility();
     setLandLabels(i);
   });
 
@@ -2271,10 +2342,11 @@ function buildPayloadFromLands(lands){
         recovery_params: (l.recovery === "Logistic alpha(S)")
           ? { alpha_max: l.alpha_max, rho: l.rho, S_T: l.sT }
           : {},
-
-        omega: l.omega,
+        
         tau: l.tau,
-        phase: l.phase,
+        sample_tau: l.tau_mode === "sampled",
+        mu_tau: l.mu_tau,
+        sigma_tau: l.sigma_tau,
 
         E_H: +l.EH,
         E_S: +l.ES,

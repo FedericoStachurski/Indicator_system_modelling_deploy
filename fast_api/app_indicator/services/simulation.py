@@ -14,23 +14,15 @@ def run_simulation(req: SimRequest) -> SimResponse:
         d["recovery_name"] = d.get("recovery_name") or "Constant alpha"
         d["recovery_params"] = d.get("recovery_params") or {}
 
-        # Ensure B(t) params exist + are sensible
-        omega = int(d.get("omega", 1) or 1)
-        tau = int(d.get("tau", 0) or 0)
-        phase = float(d.get("phase", 0.0) or 0.0)
+        # Farming mode: tau = fraction of year under regenerative farming
+        tau = float(d.get("tau", 0.25) or 0.25)
+        tau = min(max(tau, 0.05), 0.95)
 
-        if omega < 1:
-            omega = 1
-        if tau < 0:
-            tau = 0
-        if tau > omega:
-            tau = omega
-        if phase < 0:
-            phase = 0.0
-
-        d["omega"] = omega
         d["tau"] = tau
-        d["phase"] = phase
+
+        # Remove old farming-mode parameters if still sent by frontend/schema
+        d.pop("omega", None)
+        d.pop("phase", None)
 
         # Ensure deg_params exists
         d["deg_params"] = d.get("deg_params") or {}

@@ -108,31 +108,184 @@ def savgol_smooth_years(
     return y_smooth
 
 
-def B_pulse_train(t, omega=3.0, tau=1.0, phase=0.0):
+import numpy as np
+from scipy.stats import truncnorm
+
+
+def sample_tau(
+    n_parcels=1,
+    mu_tau=0.25,
+    sigma_tau=0.02,
+    tau_min=0.05,
+    tau_max=0.95,
+    rng=None,
+):
     """
-    Simple pulse train for farming state.
+    Sample parcel-specific regenerative durations tau_i from a
+    truncated normal distribution:
+
+        tau_i ~ N_T(mu_tau, sigma_tau, tau_min, tau_max)
+
+    Returns
+    -------
+    tau : ndarray
+        Array of sampled tau_i values.
+    """
+
+    if rng is None:
+        rng = np.random.default_rng()
+
+    a = (tau_min - mu_tau) / sigma_tau
+    b = (tau_max - mu_tau) / sigma_tau
+
+    tau = truncnorm.rvs(
+        a,
+        b,
+        loc=mu_tau,
+        scale=sigma_tau,
+        size=n_parcels,
+        random_state=rng,
+    )
+
+    return tau
+
+
+import numpy as np
+from scipy.stats import truncnorm
+
+
+def sample_tau(
+    n_parcels=1,
+    mu_tau=0.25,
+    sigma_tau=0.02,
+    tau_min=0.05,
+    tau_max=0.95,
+    rng=None,
+):
+    """
+    Sample parcel-specific regenerative durations tau_i from:
+
+        tau_i ~ N_T(mu_tau, sigma_tau, tau_min, tau_max)
+    """
+
+    if rng is None:
+        rng = np.random.default_rng()
+
+    a = (tau_min - mu_tau) / sigma_tau
+    b = (tau_max - mu_tau) / sigma_tau
+
+    return truncnorm.rvs(
+        a,
+        b,
+        loc=mu_tau,
+        scale=sigma_tau,
+        size=n_parcels,
+        random_state=rng,
+    )
+
+
+def B_pulse_train(
+    t,
+    tau=0.25,
+    phases=None,
+    rng=None,
+):
+    """
+    Pulse train for farming state.
 
     Interpretation
     --------------
-    B(t) = 0 → cover crop (LOW state, no degradation)
-    B(t) = 1 → cash crop (HIGH state, degradation active)
+    B(t) = 0.1 -> regenerative farming
+    B(t) = 0.9 -> intensive farming
 
-    One full cycle (length = omega) is:
-        LOW plateau → HIGH plateau
+    One full farming cycle is one year.
+
+    For each year j, the regenerative phase begins at phi_j,
+    with:
+
+        phi_j ~ Uniform(0, 1 - tau)
+
+    Regenerative farming occurs for a duration tau.
     """
- # Shift time
-    t_shift = np.asarray(t) - phase
 
-    # Fold into repeating interval [0, omega)
-    cycle = np.mod(t_shift, omega)
+    t = np.asarray(t, dtype=float)
+
+    if not (0 < tau <= 1):
+        raise ValueError("tau must satisfy 0 < tau <= 1.")
+
+    if rng is None:
+        rng = np.random.default_rng()
+
+    # Year index j = floor(t)
+    year = np.floor(t).astype(int)
+
+    # Position within each year
+    cycle = t - year
+
+    n_years = year.max() + 1
+
+    # Generate one phase per year if not supplied
+    if phases is None:
+        if tau == 1.0:
+            phases = np.zeros(n_years)
+        else:
+            phases = rng.uniform(
+                0.0,
+                1.0 - tau,
+                size=n_years,
+            )
+
+    phases = np.asarray(phases, dtype=float)
+
+    if len(phases) < n_years:
+        raise ValueError(
+            f"Need at least {n_years} yearly phases, "
+            f"but received {len(phases)}."
+        )
+
+    # Phase corresponding to each time point
+    phase = phases[year]
 
     low = 0.1
-    high = 1-low
+    high = 1.0 - low
 
-    # LOW for cycle < tau, HIGH otherwise
-    y = np.where(cycle < tau, low, high)
+    # Regenerative farming:
+    # phase <= cycle < phase + tau
+    regenerative = (
+        (cycle >= phase)
+        & (cycle < phase + tau)
+    )
+
+    y = np.where(regenerative, low, high)
 
     return y
+
+
+# def B_pulse_train(t, omega=3.0, tau=1.0, phase=0.0):
+#     """
+#     Simple pulse train for farming state.
+
+#     Interpretation
+#     --------------
+#     B(t) = 0 → cover crop (LOW state, no degradation)
+#     B(t) = 1 → cash crop (HIGH state, degradation active)
+
+#     One full cycle (length = omega) is:
+#         LOW plateau → HIGH plateau
+#     """
+#  # Shift time
+#     t_shift = np.asarray(t) - phase
+
+#     # Fold into repeating interval [0, omega)
+#     cycle = np.mod(t_shift, omega)
+
+#     low = 0.1
+#     high = 1-low
+
+#     # LOW for cycle < tau, HIGH otherwise
+#     y = np.where(cycle < tau, low, high)
+
+#     return y
 
 
 # def B_pulse_train(t, omega=3.0, tau=1.0, phase=0.0, amp=1.0):
@@ -386,6 +539,7 @@ def gamma_pdf(x: np.ndarray, alpha: float, rate: float) -> np.ndarray:
 @dataclass
 class LandConfig:
     """Configuration for a single land / land owner."""
+
     name: str
     alpha: float
     S0: float
@@ -393,17 +547,17 @@ class LandConfig:
     deg_params: Dict
     land_fraction: float
     P_max: float
+
     recovery_name: str = "Constant alpha"
     recovery_params: Dict = None
 
     # Farming mode
-    omega: int = 1
-    tau: int = 0
-    phase: float = 0.0
+    tau: float = 0.25
+    sample_tau: bool = False
+    mu_tau: float = 0.25
+    sigma_tau: float = 0.02
 
-    # Per-land emissions factors (tCO2eq/(ha*yr))
-    # E_H > 0 = cultivation emissions magnitude
-    # E_S > 0 = cover-crop sequestration magnitude
+    # Per-land emissions factors
     E_H: Optional[float] = None
     E_S: Optional[float] = None
 
@@ -454,23 +608,21 @@ class SimulationResult:
 # ------------------------------------------------------------
 
 def _soil_ode_single(
-    t: float,
-    S: np.ndarray,
+    t,
+    S,
     D_fun,
-    deg_params: Dict,
+    deg_params,
     alpha_fun,
-    recovery_params: Dict,
-    omega: int,
-    tau: int,
-    phase: float,
-) -> np.ndarray:
+    recovery_params,
+    tau,
+    phases,
+):
     S_val = float(S[0])
 
     a = float(alpha_fun(S_val, recovery_params))
     D_base = float(D_fun(t, deg_params))
-    B_t = B_pulse_train(t, omega=omega, tau=tau, phase=phase)
+    B_t = float(B_pulse_train(t, tau=tau, phases=phases))
 
-    # Degradation active only during cultivated phase
     D_t = D_base * B_t
 
     net = a - D_t
@@ -478,7 +630,6 @@ def _soil_ode_single(
         net = 0.0
 
     return np.array([net * S_val * (1.0 - S_val)], dtype=float)
-
 
 # ------------------------------------------------------------
 # Macro ODEs
@@ -598,11 +749,16 @@ def simulate_multi_land(
     J_0: float | None = None,
     nu: float | None = None,
 
+    # Random seed
+    random_seed: int | None = 42
+
 
 ) -> SimulationResult:
 
     if len(lands) == 0:
         raise ValueError("simulate_multi_land: need at least one LandConfig")
+
+    rng = np.random.default_rng(random_seed)
 
     n_lands = len(lands)
     n_steps = int(round(float(n_points) * float(T_max)))
@@ -619,6 +775,7 @@ def simulate_multi_land(
     P_max_vec: List[float] = []
 
     # ---- land loops ----
+    rng = np.random.default_rng(42)
     for i, land in enumerate(lands):
         land_names.append(land.name)
         land_fractions.append(float(land.land_fraction))
@@ -641,7 +798,23 @@ def simulate_multi_land(
             rp = {"alpha_const": land.alpha}
 
         D_fun = SCENARIOS[land.scenario_name]
-        min_window = max(0.1, land.omega / 10.0)
+
+        if land.sample_tau: # check if user input or not 
+            tau_i = sample_tau(
+                n_parcels=1,
+                mu_tau=land.mu_tau,
+                sigma_tau=land.sigma_tau,
+                tau_min=0.05,
+                tau_max=0.95,
+                rng=rng,
+            )[0]
+        else:
+            tau_i = float(land.tau)
+
+
+        # sample one phase phi_{i,j} for each year
+        n_years = int(np.floor(T_max)) + 1
+        phases_i = rng.uniform(0.0, 1.0 - tau_i, size=n_years)
 
         sol = solve_ivp(
             _soil_ode_single,
@@ -649,20 +822,25 @@ def simulate_multi_land(
             t_span=(0.0, T_max),
             y0=[land.S0],
             t_eval=t_eval,
-            max_step=min_window / 10.0,
+            max_step=0.01,
             rtol=1e-8,
             atol=1e-10,
-            args=(D_fun, land.deg_params, alpha_fun, rp, land.omega, land.tau, land.phase),
+            args=(D_fun, land.deg_params, alpha_fun, rp, tau_i, phases_i),
         )
 
         S_i = sol.y[0]
         soils[i, :] = S_i
 
-        B_series = np.array(
-            [B_pulse_train(tt, land.omega, land.tau, land.phase) for tt in t_eval],
+        B_series = B_pulse_train(
+            t_eval,
+            tau=tau_i,
+            phases=phases_i,
+        )
+
+        D_base_series = np.array(
+            [D_fun(tt, land.deg_params) for tt in t_eval],
             dtype=float
         )
-        D_base_series = np.array([D_fun(tt, land.deg_params) for tt in t_eval], dtype=float)
         degradations[i, :] = D_base_series * B_series
 
         # production
@@ -677,12 +855,12 @@ def simulate_multi_land(
         productions[i, :] = Y_rate * L_i
 
         # emissions / sequestration
-        # Convention:
-        #   cultivation phase: +E_H * L_i
-        #   cover-crop phase: -E_S * L_i
         E_H = float(land.E_H) if land.E_H is not None else float(E_H_default)
         E_S = float(land.E_S) if land.E_S is not None else float(E_S_default)
-        emissions[i, :] = (E_H * B_series - E_S * (1.0 - B_series)) * L_i
+
+        emissions[i, :] = (
+            E_H * B_series - E_S * (1.0 - B_series)
+        ) * L_i
 
     land_fractions_arr = np.array(land_fractions, dtype=float)
     alphas_arr = np.array(alphas, dtype=float)

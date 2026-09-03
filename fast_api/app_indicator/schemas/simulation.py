@@ -16,9 +16,11 @@ class LandIn(BaseModel):
     recovery_name: Optional[str] = "Logistic alpha(S)"
     recovery_params: Dict[str, Any] = Field(default_factory=dict)
 
-    omega: int = 1
-    tau: int = 0
-    phase: float = 0.0
+    # Farming mode
+    tau: float = Field(default=0.25, ge=0.05, le=0.95)
+    sample_tau: bool = False
+    mu_tau: float = Field(default=0.25, ge=0.05, le=0.95)
+    sigma_tau: float = Field(default=0.02, gt=0.0)
 
     E_H: Optional[float] = None
     E_S: Optional[float] = None
@@ -55,13 +57,13 @@ class SimRequest(BaseModel):
     total_land_area: float = 560_000.0
 
     # emissions defaults
-    E_H_default: float = 1.5
-    E_S_default: float = 1.17
+    E_H_default: float = 1.6
+    E_S_default: float = 1.28
 
     # reinvestment feedback parameters
     theta: float = 0.51
     eta: float = 0.05
-    nu: float = 6.375e8
+    nu: float = 6.375e10
 
 
 class SimResponse(BaseModel):
