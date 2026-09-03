@@ -6,16 +6,17 @@ build-backend = "setuptools.build_meta"
 name = "indicator-system-modelling"
 version = "0.1.0"
 requires-python = ">=3.10"
+
 dependencies = [
     "fastapi",
     "uvicorn[standard]",
 ]
 
 [project.scripts]
-run-fastapi = "run_fastapi:main"
+run-indicator = "run_indicator_app:main"
 
 [tool.setuptools]
-py-modules = ["run_fastapi"]
+py-modules = ["run_indicator_app"]
 
 [tool.setuptools.packages.find]
 where = ["."]

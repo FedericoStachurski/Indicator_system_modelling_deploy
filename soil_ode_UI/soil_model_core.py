@@ -108,7 +108,7 @@ def savgol_smooth_years(
     return y_smooth
 
 
-def B_pulse_train(t, omega=3.0, tau=1.0, phase=0.0, amp = 1.0):
+def B_pulse_train(t, omega=3.0, tau=1.0, phase=0.0):
     """
     Simple pulse train for farming state.
 
@@ -127,7 +127,7 @@ def B_pulse_train(t, omega=3.0, tau=1.0, phase=0.0, amp = 1.0):
     cycle = np.mod(t_shift, omega)
 
     low = 0.1
-    high = amp
+    high = 1-low
 
     # LOW for cycle < tau, HIGH otherwise
     y = np.where(cycle < tau, low, high)
