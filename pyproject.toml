@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "indicator-system-modelling"
 version = "0.1.0"
-requires-python = ">=3.10"
+requires-python = ">=3.12,<3.13"
 
 dependencies = [
     "fastapi[standard]",
@@ -20,3 +20,6 @@ py-modules = ["run_indicator_app"]
 
 [tool.setuptools.packages.find]
 where = ["."]
+
+[tool.fastapi]
+entrypoint = "fast_api.app_indicator.main:app"
