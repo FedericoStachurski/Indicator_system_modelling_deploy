@@ -203,7 +203,7 @@ def B_pulse_train(
     For each year j, the regenerative phase begins at phi_j,
     with:
 
-        phi_j ~ Uniform(0, 1 - tau)
+        phi_j ~ Uniform(0, tau)
 
     Regenerative farming occurs for a duration tau.
     """
@@ -225,13 +225,13 @@ def B_pulse_train(
     n_years = year.max() + 1
 
     # Generate one phase per year if not supplied
-    if phases is None:
+    if phases is None: # if constant 
         if tau == 1.0:
             phases = np.zeros(n_years)
         else:
             phases = rng.uniform(
                 0.0,
-                1.0 - tau,
+                tau,
                 size=n_years,
             )
 
@@ -639,7 +639,7 @@ def _population_ODE(P: float, population_growth_rate: float) -> float:
     return population_growth_rate * P
 
 
-def _inflation_index_ODE(I: float, inflation_rate: float) -> float:
+def _inflation_index_ODE(I: float, inflation_rate: float) -> float: #Change to constant value 
     return inflation_rate * I
 
 
@@ -814,7 +814,7 @@ def simulate_multi_land(
 
         # sample one phase phi_{i,j} for each year
         n_years = int(np.floor(T_max)) + 1
-        phases_i = rng.uniform(0.0, 1.0 - tau_i, size=n_years)
+        phases_i = rng.uniform(0.0, tau_i, size=n_years)
 
         sol = solve_ivp(
             _soil_ode_single,
@@ -994,9 +994,14 @@ def simulate_multi_land(
 
     # ---- food price index Q(t) ----
     # beta_q was already computed above for the reinvestment equation.
-    food_price_index = 100 * beta_q / (
-        np.maximum(self_sufficiency_ratio, 1e-12)
-        * np.maximum(inflation_index, 1e-12)
+    # food_price_index = 100 * beta_q / (
+    #     np.maximum(self_sufficiency_ratio, 1e-12)
+    #     * np.maximum(inflation_index, 1e-12)
+    # )
+
+    food_price_index = beta_q * np.maximum(food_consumption, 1e-12) / (
+        np.maximum(calorie_production, 1e-12)
+        * 1 #np.maximum(inflation_index, 1e-12)
     )
 
     # ---- food insecurity index Z(t) ----
