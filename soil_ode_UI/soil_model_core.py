@@ -728,7 +728,11 @@ def simulate_multi_land(
     # production / demand conversion
     harvest_fraction: float = 1.0,
     calories_per_kg: float = 2550, # kcal/kg of food on avg (gamma_m)
+    calories_per_tonne: float = 2_100_000,  # kcal/tonne, gamma_m
     calories_per_person: float = 700_000, # gamma
+
+   
+
 
 
     # land area
@@ -936,15 +940,13 @@ def simulate_multi_land(
 
     # ---- food consumption / demand ----
 
-    # Total calorie demand C(t) [kcal/year]
-    food_consumption = population * calories_per_person
+    food_consumption = (
+        population * calories_per_person
+    )  # kcal/year
 
-    # Rescaled food-mass demand C_tilde(t) [tonnes/year]
     food_consumption_rescaled = (
-        food_consumption
-        / calories_per_kg
-        / 1000.0
-    )
+        food_consumption / calories_per_tonne
+    )  # tonnes/year
 
     # Initial demand C_tilde(0)
     food_demand_0 = food_consumption_rescaled[0]
@@ -958,30 +960,28 @@ def simulate_multi_land(
     if J_0 is None:
         J_0 = eta * theta * U_0 * Q_0
 
-    if nu is None:
-        nu = J_0 / 0.01
+    # Baseline import-to-domestic-production ratio
+    r0 = 0.5
 
-    # Initial reinvestment ratio J(0) / nu
-    r0 = J_0 / nu
+    # Reinvestment factor nu = J(0) / r0
+    nu = J_0 / r0
 
 
     # ---- calibrate production to R_0 ----
 
-    # Desired realised production P(0), such that R(0) = R_0
+    # Desired realised production P(0)
     production_0_target = (
         (R_0 / 100.0)
         * food_demand_0
     )
 
     # P(0) = P_tilde(0) * (1 + r0)
-    # therefore obtain the required baseline production P_tilde(0)
     production_tilde_0_target = (
         production_0_target
         / (1.0 + r0)
     )
 
-    # Scale the soil-driven production curve so that its initial value
-    # is consistent with the chosen R_0
+    # Scale soil-driven production so R(0) = R_0
     production_scale = (
         production_tilde_0_target
         / total_production[0]
@@ -993,7 +993,6 @@ def simulate_multi_land(
 
     # ---- beta_Q calibration ----
 
-    # Since R(0) is now exactly R_0:
     beta_q = (
         Q_0
         * I_0
@@ -1015,7 +1014,9 @@ def simulate_multi_land(
         theta=theta,
     )
 
-    # Realised production P(t)
+
+    # ---- realised production P(t) ----
+
     total_production_real = (
         total_production
         * (1.0 + J_investment_series / float(nu))
@@ -1029,6 +1030,9 @@ def simulate_multi_land(
         * total_production_real
         / food_consumption_rescaled
     )
+
+
+    # ---- checks ----
 
     print("Expected J0:", J_0)
     print("Computed J(0):", J_investment_series[0])
@@ -1045,11 +1049,8 @@ def simulate_multi_land(
 
     print(
         "Actual SSR:",
-        100.0
-        * total_production_real[0]
-        / food_consumption_rescaled[0]
+        self_sufficiency_ratio[0]
     )
-
     # ---- harvest ----
     hf = float(np.clip(harvest_fraction, 0.0, 1.0))
     harvest_per_land = hf * productions
