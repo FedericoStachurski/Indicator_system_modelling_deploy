@@ -73,6 +73,7 @@ def run_simulation(req: SimRequest) -> SimResponse:
         harvest_fraction=req.harvest_fraction,
         calories_per_kg=req.calories_per_kg, 
         calories_per_person=req.calories_per_person,
+        calories_per_tonne=req.calories_per_tonne,
 
         # land area
         total_land_area=req.total_land_area,
