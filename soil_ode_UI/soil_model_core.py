@@ -727,8 +727,13 @@ def simulate_multi_land(
 
     # production / demand conversion
     harvest_fraction: float = 1.0,
-    calories_per_unit: float = 255_000,
-    calorie_per_person: float = 700_000,
+    calories_per_kg: float = 2550, # kcal/kg of food on avg (gamma_m)
+    calories_per_tonne: float = 2_100_000,  # kcal/tonne, gamma_m
+    calories_per_person: float = 700_000, # gamma
+
+   
+
+
 
     # land area
     total_land_area: float = 560_000,
@@ -934,27 +939,73 @@ def simulate_multi_land(
     gini = np.clip(gini, 0.0, 1.0)
 
     # ---- food consumption / demand ----
-    # Food consumption is taken to be calorie demand.
-    food_consumption = population * float(calorie_per_person) 
 
-    # ---- reinvestment boost ----
-    # total_production is P_tilde(t): baseline production from the soil/land model.
-    # total_production_real is P(t): realised production after reinvestment.
-    # beta_q = float(Q_0) * float(R_0) * float(I_0) / 100
-    beta_q = total_production[0]*(1.01) / (1000 * calorie_per_person / calories_per_unit)  # scale to current production for more dynamic response
+    food_consumption = (
+        population * calories_per_person
+    )  # kcal/year
+
+    food_consumption_rescaled = (
+        food_consumption / calories_per_tonne
+    )  # tonnes/year
+
+    # Initial demand C_tilde(0)
+    food_demand_0 = food_consumption_rescaled[0]
+
+
+    # ---- reinvestment baseline ----
 
     if U_0 is None:
-        U_0 = 2.55e6 / theta
+        U_0 = initial_population
 
     if J_0 is None:
         J_0 = eta * theta * U_0 * Q_0
 
-    if nu is None:
-        nu = J_0 / 0.01
+    # Baseline import-to-domestic-production ratio
+    r0 = 0.5
+
+    # Reinvestment factor nu = J(0) / r0
+    nu = J_0 / r0
+
+
+    # ---- calibrate production to R_0 ----
+
+    # Desired realised production P(0)
+    production_0_target = (
+        (R_0 / 100.0)
+        * food_demand_0
+    )
+
+    # P(0) = P_tilde(0) * (1 + r0)
+    production_tilde_0_target = (
+        production_0_target
+        / (1.0 + r0)
+    )
+
+    # Scale soil-driven production so R(0) = R_0
+    production_scale = (
+        production_tilde_0_target
+        / total_production[0]
+    )
+
+    productions = productions * production_scale
+    total_production = total_production * production_scale
+
+
+    # ---- beta_Q calibration ----
+
+    beta_q = (
+        Q_0
+        * I_0
+        * R_0
+        / 100.0
+    )
+
+
+    # ---- reinvestment dynamics ----
 
     J_investment_series = J_investment_func(
         pop=population,
-        C=food_consumption / calories_per_unit,
+        C=food_consumption_rescaled,
         P_tilde=total_production,
         I=inflation_index,
         nu=nu,
@@ -963,25 +1014,43 @@ def simulate_multi_land(
         theta=theta,
     )
 
-    # Debug system prints
-    # print(f"J_investment_series: {J_investment_series}")
-    # print(f"U_0: {U_0}")
-    # print(f"Q_0: {Q_0}")
-    # print(f"J_0: {J_0}")
-    # print(f"nu: {nu} ")
 
-    total_production_real = total_production * (1.0 + J_investment_series / float(nu))
+    # ---- realised production P(t) ----
 
-    # ---- self-sufficiency ratio ----
-    # Use instantaneous boosted production.
-    # Important: this preserves the true t=0 value and makes results independent
-    # of the plotting/time resolution n_points.
-    calorie_production = total_production_real * float(calories_per_unit)
-
-    self_sufficiency_ratio = 100.0 * (
-        calorie_production / np.maximum(food_consumption, 1e-12)
+    total_production_real = (
+        total_production
+        * (1.0 + J_investment_series / float(nu))
     )
 
+
+    # ---- self-sufficiency ratio ----
+
+    self_sufficiency_ratio = (
+        100.0
+        * total_production_real
+        / food_consumption_rescaled
+    )
+
+
+    # ---- checks ----
+
+    print("Expected J0:", J_0)
+    print("Computed J(0):", J_investment_series[0])
+
+    print("Expected r0:", r0)
+    print("Computed r(0):", J_investment_series[0] / nu)
+
+    print("beta_q:", beta_q)
+
+    print(
+        "SSR implied by beta_q:",
+        100.0 * beta_q / (Q_0 * I_0)
+    )
+
+    print(
+        "Actual SSR:",
+        self_sufficiency_ratio[0]
+    )
     # ---- harvest ----
     hf = float(np.clip(harvest_fraction, 0.0, 1.0))
     harvest_per_land = hf * productions

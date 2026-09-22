@@ -50,8 +50,9 @@ class SimRequest(BaseModel):
 
     # production / demand conversion
     harvest_fraction: float = 1.0
-    calories_per_unit: float = 255_000.0
-    calorie_per_person: float = 700_000.0
+    calories_per_kg: float = 2550.0
+    calories_per_tonne: float = 2_100_000.0  # kcal/tonne, gamma_m
+    calories_per_person: float = 700_000.0
 
     # land area
     total_land_area: float = 560_000.0
