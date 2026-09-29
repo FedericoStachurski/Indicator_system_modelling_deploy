@@ -739,8 +739,8 @@ def simulate_multi_land(
     total_land_area: float = 560_000,
 
     # GLOBAL defaults
-    E_H_default: float = 1.6,
-    E_S_default: float = 1.28,
+    E_H_default: float = 1.5,
+    E_S_default: float = 1.17,
 
     # Baseline constants for food price equation
     Q_0: float = 5000.0,
@@ -749,7 +749,7 @@ def simulate_multi_land(
 
     # Reinvestment parameters
     theta: float = 0.51,
-    eta: float = 0.05,
+    eta: float = 0.04,
     U_0: float | None = None,
     J_0: float | None = None,
     nu: float | None = None,
