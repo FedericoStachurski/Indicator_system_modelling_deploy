@@ -21,3 +21,6 @@ py-modules = ["run_indicator_app"]
 
 [tool.setuptools.packages.find]
 where = ["."]
+
+[tool.fastapi]
+entrypoint = "fast_api.app_indicator.main:app"
