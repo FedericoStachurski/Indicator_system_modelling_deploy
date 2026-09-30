@@ -452,6 +452,237 @@
       color: #222;
     }
 
+    /* =====================================================
+   FANCY SIMULATION LOADER
+   ===================================================== */
+
+  .simulation-loader {
+
+    position: fixed;
+
+    top: 58px;
+    left: 50%;
+
+    transform: translateX(-50%);
+
+    width: min(520px, 82vw);
+
+    padding: 12px 16px 14px 16px;
+
+    background:
+      rgba(255, 255, 255, 0.78);
+
+    backdrop-filter:
+      blur(14px)
+      saturate(140%);
+
+    -webkit-backdrop-filter:
+      blur(14px)
+      saturate(140%);
+
+    border:
+      1px solid
+      rgba(255, 255, 255, 0.7);
+
+    border-radius: 16px;
+
+    box-shadow:
+      0 8px 30px rgba(0,0,0,0.16),
+      0 0 22px rgba(76,175,80,0.12);
+
+    z-index: 99999;
+
+    box-sizing: border-box;
+
+    pointer-events: none;
+
+    animation:
+      loaderAppear 0.25s ease-out;
+  }
+
+
+  /* hidden state */
+
+  .simulation-loader.hidden {
+    display: none;
+  }
+
+
+  /* =====================================================
+    TEXT
+    ===================================================== */
+
+  .simulation-loader-text {
+
+    text-align: center;
+
+    font-size: 13px;
+
+    font-weight: 700;
+
+    letter-spacing: 0.3px;
+
+    color: #222;
+
+    margin-bottom: 9px;
+  }
+
+
+  /* animated dots after text */
+
+  .simulation-loader-text::after {
+
+    content: "";
+
+    display: inline-block;
+
+    width: 1.4em;
+
+    text-align: left;
+
+    animation:
+      loadingDots 1.4s steps(4, end) infinite;
+  }
+
+
+  /* =====================================================
+    BAR TRACK
+    ===================================================== */
+
+  .simulation-loader-track {
+
+    position: relative;
+
+    width: 100%;
+    height: 8px;
+
+    background:
+      rgba(0,0,0,0.08);
+
+    border-radius: 999px;
+
+    overflow: hidden;
+
+    box-shadow:
+      inset 0 1px 3px rgba(0,0,0,0.15);
+  }
+
+
+  /* =====================================================
+    MOVING BAR
+    ===================================================== */
+
+  .simulation-loader-bar {
+
+    position: absolute;
+
+    height: 100%;
+    width: 38%;
+
+    border-radius: 999px;
+
+    background:
+      linear-gradient(
+        90deg,
+        #2e7d32,
+        #66bb6a,
+        #b7e778,
+        #66bb6a,
+        #2e7d32
+      );
+
+    background-size: 200% 100%;
+
+    box-shadow:
+      0 0 8px rgba(76,175,80,0.8),
+      0 0 18px rgba(76,175,80,0.45);
+
+    animation:
+      loaderMove 1.35s ease-in-out infinite,
+      loaderGlow 1.35s ease-in-out infinite;
+  }
+
+
+  /* =====================================================
+    ANIMATIONS
+    ===================================================== */
+
+  @keyframes loaderMove {
+
+    0% {
+      left: -40%;
+      background-position: 0% 50%;
+    }
+
+    50% {
+      background-position: 100% 50%;
+    }
+
+    100% {
+      left: 105%;
+      background-position: 0% 50%;
+    }
+
+  }
+
+
+  @keyframes loaderGlow {
+
+    0%,
+    100% {
+      opacity: 0.75;
+    }
+
+    50% {
+      opacity: 1;
+    }
+
+  }
+
+
+  @keyframes loaderAppear {
+
+    from {
+      opacity: 0;
+      transform:
+        translateX(-50%)
+        translateY(-8px)
+        scale(0.98);
+    }
+
+    to {
+      opacity: 1;
+      transform:
+        translateX(-50%)
+        translateY(0)
+        scale(1);
+    }
+
+  }
+
+
+  @keyframes loadingDots {
+
+    0% {
+      content: "";
+    }
+
+    25% {
+      content: ".";
+    }
+
+    50% {
+      content: "..";
+    }
+
+    75%,
+    100% {
+      content: "...";
+    }
+
+  }
+
+
   @media (max-width: 1400px){
     .all-plots-grid{
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -467,10 +698,23 @@
       height: 240px;
     }
   }
+
+
   </style>
 </head>
 
 <body>
+  <div id="simulationLoader" class="simulation-loader hidden">
+
+    <div class="simulation-loader-text">
+      Computing scenario...
+    </div>
+
+    <div class="simulation-loader-track">
+      <div class="simulation-loader-bar"></div>
+    </div>
+
+  </div>
   <div class="app">
     <div class="header">
       <div class="title">Soil Health & Food Affordability — Dashboard</div>
@@ -633,12 +877,12 @@
 
               <iframe
                 id="systemMapPdf"
-                src="/static/paper/System_map_vertical_placeholder.pdf#toolbar=0&navpanes=0&view=FitH"
+                src="/static/paper/System_map_vertical.pdf#toolbar=0&navpanes=0&view=FitH"
                 style="
                   width:100%;
                   height:100%;
-                  min-height:680px;
-                  border:none;
+                  min-height:780px;
+                  border:black;
                   background:white;
                 ">
               </iframe>
@@ -711,7 +955,7 @@
 
           <div class="row">
             <div class="labelrow"><span><b>T_max</b></span><span id="tmaxLabel" class="small"></span></div>
-            <input id="tmax" type="range" min="10" max="250" step="10" value="50">
+            <input id="tmax" type="range" min="10" max="200" step="10" value="50">
           </div>
 
           <div class="row">
@@ -757,14 +1001,14 @@
           <div class="row">
             <div class="labelrow"><span><b>Rolling average</b></span><span id="rollLabel" class="small"></span></div>
             <select id="rollOn">
-              <option value="off" selected>Off</option>
-              <option value="on">On</option>
+              <option value="on" selected>On</option>
+              <option value="off">Off</option>
             </select>
           </div>
 
           <div class="row">
             <div class="labelrow"><span><b>Rolling window (years)</b></span><span id="rollYearsLabel" class="small"></span></div>
-            <input id="rollYears" type="range" min="0.5" max="20" step="0.5" value="3">
+            <input id="rollYears" type="range" min="0.5" max="20" step="0.5" value="1">
           </div>
 
           <div class="row">
@@ -844,6 +1088,37 @@ const SIGN = {
   food_insecurity: +1,
 };
 
+function showSimulationLoader(){
+
+  const loader =
+    document.getElementById(
+      "simulationLoader"
+    );
+
+  if (loader){
+    loader.classList.remove(
+      "hidden"
+    );
+  }
+
+}
+
+
+function hideSimulationLoader(){
+
+  const loader =
+    document.getElementById(
+      "simulationLoader"
+    );
+
+  if (loader){
+    loader.classList.add(
+      "hidden"
+    );
+  }
+
+}
+
 function mean(arr){
   if (!arr || !arr.length) return 0;
   let s = 0;
@@ -875,22 +1150,123 @@ function cumulativeTrapezoid(y, x) {
   return cumulative;
 }
 
-function signedPctImprovementAverage(seriesScenario, seriesBAU, sign=+1){
+function signedPctImprovementAverage(
+  seriesScenario,
+  seriesBAU,
+  sign=+1,
+  tScenario=null,
+  tBAU=null
+){
   if (!seriesScenario || !seriesBAU) return 0;
 
-  let sum = 0;
-  const n = Math.min(seriesScenario.length, seriesBAU.length);
+  // If time axes are not supplied, preserve the original behaviour.
+  if (
+    !tScenario ||
+    !tBAU ||
+    tScenario.length !== seriesScenario.length ||
+    tBAU.length !== seriesBAU.length
+  ){
+    let sum = 0;
+    const n = Math.min(seriesScenario.length, seriesBAU.length);
 
-  for (let i = 0; i < n; i++){
-    const xs = seriesScenario[i];
-    const xb = seriesBAU[i];
+    if (n === 0) return 0;
 
-    sum += (xs - xb) / (Math.abs(xb) + EPS);
+    for (let i = 0; i < n; i++){
+      const xs = seriesScenario[i];
+      const xb = seriesBAU[i];
+
+      sum += (xs - xb) / (Math.abs(xb) + EPS);
+    }
+
+    const avgPct = 100 * sum / n;
+    return sign * avgPct;
   }
 
-  const avgPct = 100 * sum / n;
+  // Compare only over the time interval shared by both scenarios.
+  const tStart = Math.max(tScenario[0], tBAU[0]);
+  const tEnd = Math.min(
+    tScenario[tScenario.length - 1],
+    tBAU[tBAU.length - 1]
+  );
 
-  return sign * avgPct;
+  if (!(tEnd > tStart)) return 0;
+
+  // Linear interpolation of the precomputed reference onto the
+  // user-scenario time grid. This is plotting/comparison only; it does
+  // not rerun or alter either simulation.
+  let j = 0;
+  const ratios = [];
+  const ratioTimes = [];
+
+  for (let i = 0; i < tScenario.length; i++){
+    const tt = tScenario[i];
+
+    if (tt < tStart || tt > tEnd) continue;
+
+    while (
+      j < tBAU.length - 2 &&
+      tBAU[j + 1] < tt
+    ){
+      j++;
+    }
+
+    const t0 = tBAU[j];
+    const t1 = tBAU[j + 1];
+    const y0 = seriesBAU[j];
+    const y1 = seriesBAU[j + 1];
+    const xs = seriesScenario[i];
+
+    if (
+      xs === null || xs === undefined ||
+      y0 === null || y0 === undefined ||
+      y1 === null || y1 === undefined
+    ){
+      continue;
+    }
+
+    const frac =
+      Math.abs(t1 - t0) < 1e-12
+        ? 0
+        : (tt - t0) / (t1 - t0);
+
+    const xb = y0 + frac * (y1 - y0);
+
+    if (!Number.isFinite(xs) || !Number.isFinite(xb)){
+      continue;
+    }
+
+    ratios.push(
+      (xs - xb) / (Math.abs(xb) + EPS)
+    );
+
+    ratioTimes.push(tt);
+  }
+
+  if (ratios.length === 0) return 0;
+
+  if (ratios.length === 1){
+    return sign * 100 * ratios[0];
+  }
+
+  let integral = 0;
+
+  for (let i = 1; i < ratios.length; i++){
+    const dt = ratioTimes[i] - ratioTimes[i - 1];
+
+    if (dt > 0){
+      integral +=
+        0.5 * (ratios[i] + ratios[i - 1]) * dt;
+    }
+  }
+
+  const duration =
+    ratioTimes[ratioTimes.length - 1] - ratioTimes[0];
+
+  if (duration <= 0){
+    return sign * 100 * ratios[0];
+  }
+
+  return sign * 100 * integral / duration;
 }
 function clamp(x, a, b){ return Math.max(a, Math.min(b, x)); }
 
@@ -984,7 +1360,7 @@ const BAU_LAND = {
   share: 100,
 
   alpha: 0.20,
-  s0: 0.80,
+  s0: 0.50,
   recovery: "Logistic alpha(S)",
   alpha_max: 0.25,
   sT: 0.20,
@@ -999,7 +1375,7 @@ const BAU_LAND = {
   zeta: 1.0,
   D0: 1.2,
 
-  tau_mode: "fixed",
+  tau_mode: "sampled",
   tau: 0.30,
   mu_tau: 0.30,
   sigma_tau: 0.02,
@@ -1017,56 +1393,52 @@ function defaultEditableLand(n){
   return base;
 }
 
+const SCENARIO_COLORS = {
+  bau: "black",
+  sustainable: "green",
+  industrial: "red",
+  equitable: "blue",
+  integrated: "orange"
+};
+
+
+function getScenarioColor(id){
+
+  // User-created scenario keeps its assigned random colour
+  if (id === "custom"){
+    return (
+      scenarios[activeScenario]?.color
+      ?? "#8a2be2"
+    );
+  }
+
+  return (
+    SCENARIO_COLORS[id]
+    ?? "#666666"
+  );
+}
+
 const SCENARIO_PRESETS = [
   {
     id: "bau",
-    name: "Business as usual",
-    muTau: 0.30,
-    muGrow: 0.002,
-    lamRate: -0.005,
-    F: 0.90,
-    eta: 0.40,
+    name: "Business as usual"
   },
-
   {
     id: "sustainable",
-    name: "Sustainable",
-    muTau: 0.50,
-    muGrow: 0.001,
-    lamRate: 0.005,
-    F: 0.80,
-    eta: 0.40,
+    name: "Sustainable"
   },
-
   {
     id: "equitable",
-    name: "Equitable",
-    muTau: 0.30,
-    muGrow: 0.001,
-    lamRate: 0.020,
-    F: 0.80,
-    eta: 0.40,
+    name: "Equitable"
   },
-
   {
     id: "industrial",
-    name: "Industrial",
-    muTau: 0.25,
-    muGrow: 0.005,
-    lamRate: -0.020,
-    F: 1.25,
-    eta: 0.40,
+    name: "Industrial"
   },
-
   {
     id: "integrated",
-    name: "Integrated",
-    muTau: 0.40,
-    muGrow: 0.002,
-    lamRate: 0.010,
-    F: 1.25,
-    eta: 0.60,
-  },
+    name: "Integrated"
+  }
 ];
 
 
@@ -1167,6 +1539,8 @@ function setupScenarioToggles(){
 function defaultScenarioState(index){
   return {
     name: `Scenario ${index + 1}`,
+
+    color: randomScenarioColor(),
 
     globals: {
       tmax: 50,
@@ -1703,6 +2077,13 @@ el("removeLandBtn").addEventListener("click", () => {
   triggerCustomSim();
 });
 
+function getPlotTMax(){
+  return Math.max(
+    0,
+    Number(el("tmax")?.value || 50)
+  );
+}
+
 // ---- plotting ----
 const commonLayout = (title, ytitle) => ({
   title: { text: title, font: { size: 26 } },
@@ -1714,7 +2095,8 @@ const commonLayout = (title, ytitle) => ({
     linewidth: 3,
     linecolor: "#222",
     tickfont: { size: 16 },
-    title: { text: "Time (years)", font: { size: 16 } }
+    title: { text: "Time (years)", font: { size: 16 } },
+    range: [0, getPlotTMax()],
   },
   yaxis: {
     showline: true,
@@ -1723,7 +2105,17 @@ const commonLayout = (title, ytitle) => ({
     title: { text: ytitle, font: { size: 16 } },
     tickfont: { size: 16 }
   },
-  legend: { font: { size: 18 }, orientation: "h", y: -0.35 }
+  legend: {
+
+    orientation: "h",
+
+    x: 0,
+    xanchor: "left",
+
+    y: -0.48,
+    yanchor: "top"
+
+  }
 });
 
 function smallLayout(title, ytitle){
@@ -1737,7 +2129,9 @@ function smallLayout(title, ytitle){
       linewidth: 2,
       linecolor: "#222",
       tickfont: { size: 10 },
-      title: { text: "Time", font: { size: 11 } }
+      title: { text: "Time", font: { size: 11 } },
+      range: [0, getPlotTMax()],
+      autorange: false
     },
     yaxis: {
       showline: true,
@@ -1747,9 +2141,15 @@ function smallLayout(title, ytitle){
       title: { text: ytitle, font: { size: 11 } }
     },
     legend: {
-      font: { size: 10 },
+
       orientation: "h",
-      y: -0.25
+
+      x: 0,
+      xanchor: "left",
+
+      y: -0.48,
+      yanchor: "top"
+
     }
   };
 }
@@ -2849,23 +3249,35 @@ function setupPdfSlider(){
 
       x: item.x,
 
-      y: item.pdf[idx],
+      y: pdfAtTime(
+        item,
+        tt
+      ),
 
       type: "scatter",
 
       mode: "lines",
 
       name: item.name,
+      opacity:
+      item.id === "custom"
+        ? 1.0
+        : 0.55,
 
       line: {
-        width: item.id === "bau" ? 6 : (item.id === "custom" ? 6 : 5),
-        ...(item.id === "bau"
-          ? { color: "black" }
-          : {}),
-        ...(item.id === "custom"
-          ? { dash: "dash" }
-          : {})
-      }
+
+      width:
+        item.id === "custom"
+          ? 9
+          : item.id === "bau"
+            ? 6
+            : 5,
+
+      color:
+        getScenarioColor(item.id),
+        opacity: 0.55,
+
+    }
 
     }));
 
@@ -2912,23 +3324,263 @@ function setupPdfSlider(){
 }
 
 async function fetchSim(payload){
-  const resp = await fetch("/api/simulate", {
-    method: "POST",
-    headers: {"Content-Type":"application/json"},
-    body: JSON.stringify(payload)
-  });
 
-  const data = await resp.json();
+  showSimulationLoader();
 
-  if (!resp.ok){
-    console.error("Simulation request failed:", data);
-    throw new Error(
-      data?.detail || `Simulation failed with HTTP ${resp.status}`
-    );
+  try {
+
+    const resp =
+      await fetch(
+        "/api/simulate",
+        {
+
+          method: "POST",
+
+          headers: {
+            "Content-Type":
+              "application/json"
+          },
+
+          body:
+            JSON.stringify(payload)
+
+        }
+      );
+
+
+    const data =
+      await resp.json();
+
+
+    if (!resp.ok){
+
+      console.error(
+        "Simulation request failed:",
+        data
+      );
+
+      throw new Error(
+        data?.detail ||
+        `Simulation failed with HTTP ${resp.status}`
+      );
+
+    }
+
+
+    return data;
+
+
+  } finally {
+
+    hideSimulationLoader();
+
   }
 
-  return data;
 }
+
+let precomputedScenarioPromise = null;
+
+
+// Convert annual values saved in the precomputed .npz files onto the
+// full t_eval plotting grid. This is interpolation only; no model is run.
+function annualToTimeGrid(values, t){
+
+  if (!values?.length || !t?.length){
+    return null;
+  }
+
+  return t.map(tt => {
+
+    if (tt <= 0){
+      return values[0];
+    }
+
+    const left = Math.floor(tt);
+
+    if (left >= values.length - 1){
+      return values[values.length - 1];
+    }
+
+    const right = left + 1;
+    const fraction = tt - left;
+
+    const y0 = values[left];
+    const y1 = values[right];
+
+    if (
+      y0 === null || y0 === undefined ||
+      y1 === null || y1 === undefined
+    ){
+      return null;
+    }
+
+    return (
+      y0 * (1 - fraction)
+      +
+      y1 * fraction
+    );
+  });
+}
+
+
+// Translate the names saved by scenario_runner_integrated.py into the
+// names already used everywhere else in this dashboard.
+function adaptPrecomputedScenario(raw){
+
+  const t = raw?.t_eval ?? [];
+
+  return {
+
+    // Time
+    t,
+
+    // Soil
+    soils:
+      raw?.mean_soil_quality
+        ? [raw.mean_soil_quality]
+        : null,
+
+    weighted_soil:
+      raw?.mean_soil_quality ?? null,
+
+    // Not stored in the current precomputed files.
+    // Custom/user scenarios still contain degradation as before.
+    degradations: null,
+
+    // Production / reinvestment
+    total_production:
+      annualToTimeGrid(
+        raw?.annual_production,
+        t
+      ),
+
+    total_production_real:
+      annualToTimeGrid(
+        raw?.P_modified_annual,
+        t
+      ),
+
+    J_investment:
+      annualToTimeGrid(
+        raw?.annual_J_investment,
+        t
+      ),
+
+    // Population / demand
+    population:
+      raw?.food_consumption
+        ? raw.food_consumption.map(
+            value => value / 700000
+          )
+        : null,
+
+    food_consumption:
+      raw?.food_consumption ?? null,
+
+    // Self-sufficiency
+    self_sufficiency_ratio:
+      annualToTimeGrid(
+        raw?.ssr_annual,
+        t
+      ),
+
+    // Income / macro variables
+    average_real_income:
+      raw?.average_real_income ?? null,
+
+    inflation_index:
+      raw?.inflation_index ?? null,
+
+    redistribution_lambda:
+      raw?.lam_series ?? null,
+
+    // Inequality
+    palma_ratio:
+      raw?.palma ?? null,
+
+    gini_coefficient:
+      raw?.gini ?? null,
+
+    // Emissions
+    total_emissions:
+      annualToTimeGrid(
+        raw?.annual_emissions,
+        t
+      ),
+
+    // Food indicators
+    food_price_index:
+      annualToTimeGrid(
+        raw?.food_price_index_annual,
+        t
+      ),
+
+    food_insecurity_index:
+      annualToTimeGrid(
+        raw?.food_insecurity_index_annual,
+        t
+      ),
+
+    // Income distribution x-grid is available, but the current
+    // precomputed files do not contain income_pdf through time.
+    income_x:
+    raw.income_x ?? null,
+
+    income_pdf:
+      raw.income_pdf ?? null,
+
+    income_pdf_time:
+      raw.income_pdf_time ?? null,
+
+    // Kept available for future plotting if needed.
+    fertiliser_series:
+      raw?.fertiliser_series ?? null
+  };
+}
+
+
+async function loadPrecomputedScenarios(){
+
+  if (!precomputedScenarioPromise){
+
+    precomputedScenarioPromise =
+      fetch("/api/precomputed-scenarios")
+        .then(async resp => {
+
+          const raw = await resp.json();
+
+          if (!resp.ok){
+            throw new Error(
+              raw?.detail ||
+              `Failed to load reference scenarios: HTTP ${resp.status}`
+            );
+          }
+
+          return {
+            bau:
+              adaptPrecomputedScenario(raw.bau),
+
+            sustainable:
+              adaptPrecomputedScenario(raw.sustainable),
+
+            equitable:
+              adaptPrecomputedScenario(raw.equitable),
+
+            industrial:
+              adaptPrecomputedScenario(raw.industrial),
+
+            integrated:
+              adaptPrecomputedScenario(raw.integrated)
+          };
+        });
+  }
+
+  scenarioResults =
+    await precomputedScenarioPromise;
+
+  return scenarioResults;
+}
+
 
 function getVisibleScenarioPresets(){
   return SCENARIO_PRESETS.filter(
@@ -2943,6 +3595,40 @@ function getCustomScenarioName(){
   );
 }
 
+function pdfAtTime(item, targetTime){
+
+  if (!item?.pdf?.length){
+    return null;
+  }
+
+  const times =
+    item.t ?? [];
+
+  if (!times.length){
+    return item.pdf[0];
+  }
+
+  let bestIndex = 0;
+  let bestDistance =
+    Math.abs(times[0] - targetTime);
+
+  for (let i = 1; i < times.length; i++){
+
+    const distance =
+      Math.abs(times[i] - targetTime);
+
+    if (distance < bestDistance){
+
+      bestDistance = distance;
+      bestIndex = i;
+
+    }
+
+  }
+
+  return item.pdf[bestIndex];
+}
+
 function getVisiblePdfScenarios(){
   const items = getVisibleScenarioPresets()
     .map(preset => {
@@ -2952,21 +3638,42 @@ function getVisiblePdfScenarios(){
         id: preset.id,
         name: preset.name,
         x: data.income_x,
-        pdf: data.income_pdf
+        pdf: data.income_pdf,
+        t: data.income_pdf_time ?? data.t
       };
     })
     .filter(Boolean);
 
-  if (customScenarioResult?.income_x && customScenarioResult?.income_pdf?.length){
-    items.push({
-      id: "custom",
-      name: getCustomScenarioName(),
-      x: customScenarioResult.income_x,
-      pdf: customScenarioResult.income_pdf
-    });
-  }
+  if (
+  customScenarioResult?.income_x &&
+  customScenarioResult?.income_pdf?.length
+    ){
+
+      items.push({
+
+        id: "custom",
+
+        name: getCustomScenarioName(),
+
+        x: customScenarioResult.income_x,
+
+        pdf: customScenarioResult.income_pdf,
+
+        t: customScenarioResult.t
+
+      });
+
+    }
 
   return items;
+}
+
+function randomScenarioColor(){
+
+  const hue =
+    Math.floor(Math.random() * 360);
+
+  return `hsl(${hue}, 75%, 50%)`;
 }
 
 
@@ -3002,15 +3709,20 @@ function makeScenarioTraces(
           return null;
         }
 
+        const scenarioT =
+          data?.t && data.t.length === rawSeries.length
+            ? data.t
+            : t;
+
         const y =
           doSmooth
-            ? smoothSeries(rawSeries, t)
+            ? smoothSeries(rawSeries, scenarioT)
             : rawSeries;
 
 
         const trace = {
 
-          x: t,
+          x: scenarioT,
 
           y,
 
@@ -3019,9 +3731,11 @@ function makeScenarioTraces(
           mode: "lines",
 
           name: preset.name,
+          opacity: 0.5,
 
           line: {
-            width
+            width,
+            color: getScenarioColor(preset.id)
           }
 
         };
@@ -3064,27 +3778,57 @@ function makeScenarioTraces(
 
     if (rawCustom){
 
+      const customT =
+        customScenarioResult?.t &&
+        customScenarioResult.t.length === rawCustom.length
+          ? customScenarioResult.t
+          : t;
+
       const customY =
         doSmooth
-          ? smoothSeries(rawCustom, t)
+          ? smoothSeries(rawCustom, customT)
           : rawCustom;
 
 
+      // --- outline / edge behind the custom scenario ---
       traces.push({
 
-        x: t,
-
+        x: customT,
         y: customY,
 
         type: "scatter",
+        mode: "lines",
 
+        name: getCustomScenarioName() + " outline",
+
+        showlegend: false,
+        hoverinfo: "skip",
+
+        line: {
+          width: width + 8,
+          color: "black"
+        }
+
+      });
+
+
+      // --- actual custom scenario line ---
+      traces.push({
+
+        x: customT,
+        y: customY,
+
+        type: "scatter",
         mode: "lines",
 
         name: getCustomScenarioName(),
 
+        opacity: 1.0,
+
         line: {
-          width: width + 1,
-          dash: "dash"
+          width: width + 3,
+          color: scenarios[activeScenario]?.color
+                  ?? "#8a2be2",
         }
 
       });
@@ -3098,30 +3842,6 @@ function makeScenarioTraces(
 }
 
 
-function buildPresetPayload(preset){
-
-  const land = deepClone(BAU_LAND);
-
-  land.name = preset.name;
-  land.share = 100;
-
-  // Mean resting period
-  land.tau_mode = "fixed";
-  land.tau = preset.muTau;
-  land.mu_tau = preset.muTau;
-
-  // Fertiliser application rate
-  land.F = preset.F;
-
-  return buildPayloadFromLands(
-    [land],
-    {
-      muGrow: preset.muGrow,
-      lamRate: preset.lamRate,
-      eta: preset.eta,
-    }
-  );
-}
 
 function buildPayloadFromLands(lands, overrides = {}){
   const sumShares = Math.max(lands.reduce((a,l)=>a + (+l.share||0), 0), 1e-9);
@@ -3248,91 +3968,60 @@ async function runSim(recompute = true){
   pullUIIntoActiveScenario();
   setGlobalLabels();
 
+
+  // ===================================================
+  // OFFICIAL PRECOMPUTED SCENARIOS
+  // ===================================================
+  // These are loaded from the saved .npz files.
+  // No official/reference scenario is simulated here.
+  // The loader is promise-cached, so the files are fetched once.
+
+  await loadPrecomputedScenarios();
+
+
+  // ===================================================
+  // USER-CREATED SCENARIO
+  // ===================================================
+  // Preserve the existing recompute=true/false behaviour, but only
+  // recompute the user's editable scenario. The official scenarios above
+  // remain fixed and precomputed.
+
   if (recompute){
-    // Any in-flight custom-only request is now stale.
-    customSimGeneration += 1;
-  }
 
+    const generation = ++customSimGeneration;
 
-  // ===================================================
-  // COMPUTE
-  // Only call FastAPI when simulation inputs changed
-  // ===================================================
+    if (landsState.length > 0){
 
-  if (
-    recompute ||
-    !scenarioResults ||
-    !scenarioResults.bau
-  ){
+      const customData =
+        await fetchSim(
+          buildPayloadFromLands(landsState)
+        );
 
-    console.log("Recomputing all scenarios...");
+      // Ignore a stale response if another control changed while this
+      // request was running.
+      if (generation !== customSimGeneration){
+        return;
+      }
 
-
-    // ===================================================
-    // PREDEFINED SCENARIOS
-    // ===================================================
-
-    const presetPromise = Promise.all(
-
-      SCENARIO_PRESETS.map(async preset => {
-
-        const payload =
-          buildPresetPayload(preset);
-
-        const data =
-          await fetchSim(payload);
-
-        return [preset.id, data];
-
-      })
-
-    );
-
-
-    // ===================================================
-    // USER-CREATED SCENARIO
-    // ===================================================
-
-    const hasCustomScenario =
-      landsState.length > 0;
-
-    const customPromise =
-      hasCustomScenario
-        ? fetchSim(
-            buildPayloadFromLands(landsState)
-          )
-        : Promise.resolve(null);
-
-
-    // ===================================================
-    // RUN EVERYTHING TOGETHER
-    // ===================================================
-
-    const [entries, customData] =
-      await Promise.all([
-        presetPromise,
-        customPromise
-      ]);
-
-
-    scenarioResults =
-      Object.fromEntries(entries);
-
-    customScenarioResult =
-      customData;
-
+      customScenarioResult =
+        customData;
+    }
+    else {
+      customScenarioResult = null;
+    }
   }
 
 
   // ===================================================
   // RENDER
-  // Everything below here uses cached results
+  // Everything below here uses the precomputed official scenarios plus
+  // the current user-created scenario (if one exists).
   // ===================================================
 
   const bauData = scenarioResults.bau;
 
   if (!bauData){
-    console.warn("No BAU simulation available.");
+    console.warn("No precomputed BAU scenario available.");
     return;
   }
 
@@ -3422,7 +4111,7 @@ async function runSim(recompute = true){
   // ===================================================
 
   const bau_soil = bauData.soils[0];
-  const bau_deg  = bauData.degradations[0];
+  const bau_deg  = bauData.degradations?.[0] ?? null;
 
   const w = scenarioWeights();
   const sc_soil = hasScenarioData
@@ -3467,14 +4156,17 @@ async function runSim(recompute = true){
     const referenceFoodPrice = getFoodPriceSeries(referenceData);
     const referenceFoodInsecurity = getFoodSecuritySeries(referenceData);
 
+    const customT = scenarioData.t ?? t;
+    const referenceT = referenceData.t ?? t;
+
     const donutValues = [
-      signedPctImprovementAverage(sc_soil, referenceSoil, SIGN.soil),
-      signedPctImprovementAverage(sc_prod, referenceProd, SIGN.prod),
-      signedPctImprovementAverage(sc_ssr, referenceSSR, SIGN.ssr),
-      signedPctImprovementAverage(sc_deg, referenceDeg, SIGN.deg),
-      signedPctImprovementAverage(sc_emis, referenceEmis, SIGN.emis),
-      signedPctImprovementAverage(sc_food_price, referenceFoodPrice, SIGN.food_price),
-      signedPctImprovementAverage(sc_food_insecurity, referenceFoodInsecurity, SIGN.food_insecurity)
+      signedPctImprovementAverage(sc_soil, referenceSoil, SIGN.soil, customT, referenceT),
+      signedPctImprovementAverage(sc_prod, referenceProd, SIGN.prod, customT, referenceT),
+      signedPctImprovementAverage(sc_ssr, referenceSSR, SIGN.ssr, customT, referenceT),
+      signedPctImprovementAverage(sc_deg, referenceDeg, SIGN.deg, customT, referenceT),
+      signedPctImprovementAverage(sc_emis, referenceEmis, SIGN.emis, customT, referenceT),
+      signedPctImprovementAverage(sc_food_price, referenceFoodPrice, SIGN.food_price, customT, referenceT),
+      signedPctImprovementAverage(sc_food_insecurity, referenceFoodInsecurity, SIGN.food_insecurity, customT, referenceT)
     ].map(v => clamp(v, DONUT_CMIN, DONUT_CMAX));
 
     const referencePreset =
@@ -3612,34 +4304,40 @@ async function runSim(recompute = true){
       ]
     });
 
-    visiblePlots.push({
-  key: "deg",
-  title: "Degradation",
-  x: t.slice(),
-  series: [
-    { 
-      name: "Baseline", 
-      y: bauData.degradations[0].slice() 
-    },
+    const degradationExportSeries = [
+      ...(bauData.degradations?.[0]
+        ? [{
+            name: "Baseline",
+            y: bauData.degradations[0].slice()
+          }]
+        : []),
 
-    ...(hasScenarioData
-      ? scenarioData.land_names.map((name, i) => ({
-          name,
-          y: scenarioData.degradations[i].slice()
-        }))
-      : []),
+      ...(hasScenarioData && scenarioData.degradations
+        ? scenarioData.land_names.map((name, i) => ({
+            name,
+            y: scenarioData.degradations[i].slice()
+          }))
+        : []),
 
-    ...(hasScenarioData
-  ? [{
-      name: "Scenario total (area-weighted)",
-      y: weightedSeries(
-        scenarioData.degradations,
-        getCustomLandWeights()
-      )
-    }]
-  : [])
-  ]
-});
+      ...(hasScenarioData && scenarioData.degradations
+        ? [{
+            name: "Scenario total (area-weighted)",
+            y: weightedSeries(
+              scenarioData.degradations,
+              getCustomLandWeights()
+            )
+          }]
+        : [])
+    ];
+
+    if (degradationExportSeries.length){
+      visiblePlots.push({
+        key: "deg",
+        title: "Degradation",
+        x: t.slice(),
+        series: degradationExportSeries
+      });
+    }
 
     // if (bauData.total_harvest){
     //   visiblePlots.push({
@@ -4101,7 +4799,7 @@ lastRenderState.visiblePlots.push({
 
     // predefined scenario
     data =>
-      data.degradations[0],
+      data.degradations?.[0] ?? null,
 
     smoothSeries,
 
@@ -4485,10 +5183,16 @@ lastRenderState.visiblePlots.push({
       },
 
       legend: {
-        font: { size: 18 },
-        orientation: "h",
-        y: -0.35
-      }
+
+      orientation: "h",
+
+      x: 0,
+      xanchor: "left",
+
+      y: -0.48,
+      yanchor: "top"
+
+    }
 
     };
 

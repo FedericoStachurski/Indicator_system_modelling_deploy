@@ -16,6 +16,7 @@ dependencies = [
 
 [project.scripts]
 run-indicator = "run_indicator_app:main"
+run-scenarios = "static_scenario_runs.scenario_runner_integrated:main"
 
 [tool.setuptools]
 py-modules = ["run_indicator_app"]

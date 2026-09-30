@@ -7,6 +7,7 @@ from .core.config import STATIC_DIR
 from .routers.health import router as health_router
 from .routers.pages import router as pages_router
 from .routers.simulate import router as simulate_router
+from .routers import precomputed
 
 
 def create_app() -> FastAPI:
@@ -17,6 +18,7 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
     app.include_router(pages_router)
     app.include_router(simulate_router)
+    app.include_router(precomputed.router)
 
     return app
 
