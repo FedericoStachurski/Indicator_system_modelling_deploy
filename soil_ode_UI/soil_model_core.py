@@ -780,7 +780,6 @@ def simulate_multi_land(
     P_max_vec: List[float] = []
 
     # ---- land loops ----
-    rng = np.random.default_rng(42)
     for i, land in enumerate(lands):
         land_names.append(land.name)
         land_fractions.append(float(land.land_fraction))
