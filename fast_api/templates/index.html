@@ -720,15 +720,6 @@
       <div class="title">Soil Health & Food Affordability — Dashboard</div>
 
       <div style="display:flex; gap:10px; align-items:center; flex-wrap:nowrap; min-width:0;">
-        <button class="btn" id="newScenarioBtn" type="button">+ Scenario</button>
-
-        <input id="scenarioName"
-              class="scenario-name"
-              type="text"
-              value="Scenario 1"
-              title="Rename scenario" />
-
-        <select id="scenarioSelect" class="plot-select" title="Select scenario"></select>
 
         <select id="plotSelect" class="plot-select">
           <option value="none" selected>(show only Soil)</option>
@@ -819,7 +810,19 @@
             <div
               class="small"
               style="font-weight:700; margin-bottom:5px;">
-              Compare my scenario against:
+              My scenario:
+            </div>
+
+            <select
+              id="donutCustomScenarioSelect"
+              class="plot-select"
+              style="width:100%; margin-bottom:8px;">
+            </select>
+
+            <div
+              class="small"
+              style="font-weight:700; margin-bottom:5px;">
+              Compare against:
             </div>
 
             <div class="scenario-toggle-group">
@@ -954,6 +957,26 @@
           </div>
 
           <div class="row">
+
+            <div class="labelrow">
+              <span>S₀</span>
+
+              <span class="small">
+                sampled
+              </span>
+            </div>
+
+            <div class="small" style="
+              padding: 8px 10px;
+              border-radius: 8px;
+              background: rgba(0,0,0,0.04);
+            ">
+              Uniformly sampled between 0.2 and 0.8
+            </div>
+
+          </div>
+
+          <div class="row">
             <div class="labelrow"><span><b>T_max</b></span><span id="tmaxLabel" class="small"></span></div>
             <input id="tmax" type="range" min="10" max="200" step="10" value="50">
           </div>
@@ -1031,10 +1054,16 @@
 
         <div class="control" style="grid-column: 1 / -1;">
           <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
-            <h4 style="margin:0;">Lands (Scenario only)</h4>
+            <h4 style="margin:0;">Scenarios</h4>
+
             <div style="display:flex; gap:6px; flex-wrap:wrap;">
-              <button class="btn" id="addLandBtn" type="button">+ Add land</button>
-              <button class="btn" id="removeLandBtn" type="button">- Remove last</button>
+              <button class="btn" id="addScenarioBtn" type="button">
+                + Add scenario
+              </button>
+
+              <button class="btn" id="removeScenarioBtn" type="button">
+                - Remove last
+              </button>
             </div>
           </div>
 
@@ -1046,9 +1075,12 @@
             Reinvestment paramters fixed: <b>θ = 0.51</b> Households/People, <b>ν = 6.375e10 £</b> 
           </div>
 
-          <div id="landsContainer" class="grid-controls" style="grid-template-columns: 1fr 1fr; margin-top:8px;"></div>
+          <div id="scenariosContainer"
+              class="grid-controls"
+              style="grid-template-columns: 1fr 1fr; margin-top:8px;">
+          </div>
           <div class="small">Degradation can be Constant D_const or Fertiliser parabola g(F)·B(t). B(t) is the cultivation pulse (cash crops vs cover).</div>
-          <div class="small">Total share (scenario lands only): <span id="shareTotal">0%</span> (auto-normalised)</div>
+          <!-- <div class="small">Total share (scenario lands only): <span id="shareTotal">0%</span> (auto-normalised)</div> -->
         </div>
       </div>
     </div>
@@ -1360,7 +1392,6 @@ const BAU_LAND = {
   share: 100,
 
   alpha: 0.20,
-  s0: 0.50,
   recovery: "Logistic alpha(S)",
   alpha_max: 0.25,
   sT: 0.20,
@@ -1384,14 +1415,27 @@ const BAU_LAND = {
   ES: 1.17,
 };
 
-function defaultEditableLand(n){
+function defaultEditableScenario(n){
+
   const base = deepClone(BAU_LAND);
-  base.name = `Land ${n}`;
-  base.share = 100;
+
+  base.name = `Scenario ${n}`;
+
+  // Number of lands/parcels represented by this scenario.
+  // This determines how many tau_i values are sampled.
+  base.n_lands = 1;
+
+  // Scenario-level tau distribution
+  base.mu_tau = 0.30;
+  base.sigma_tau = 0.02;
+
   base.EH = 1.5;
   base.ES = 1.17;
+
   return base;
 }
+
+let scenarioConfigs = [];
 
 const SCENARIO_COLORS = {
   bau: "black",
@@ -1406,11 +1450,8 @@ function getScenarioColor(id){
 
   // User-created scenario keeps its assigned random colour
   if (id === "custom"){
-    return (
-      scenarios[activeScenario]?.color
-      ?? "#8a2be2"
-    );
-  }
+  return "#8a2be2";
+}
 
   return (
     SCENARIO_COLORS[id]
@@ -1448,10 +1489,112 @@ const visibleScenarioIds = new Set(
 
 let scenarioResults = {};
 
-// Result of the scenario currently being created/edited by the user
-let customScenarioResult = null;
+// Results of ALL user-created scenarios.
+// Index matches scenarioConfigs.
+let customScenarioResults = [];
 
-// Which predefined scenario the doughnut compares against
+
+// Which user-created scenario is shown in the doughnut
+let donutCustomScenarioIndex = 0;
+
+
+function refreshDonutCustomScenarioSelect(){
+
+  const select =
+    el("donutCustomScenarioSelect");
+
+  if (!select)
+    return;
+
+
+  select.innerHTML = "";
+
+
+  // No custom scenarios yet
+  if (scenarioConfigs.length === 0){
+
+    const option =
+      document.createElement("option");
+
+    option.value = "";
+    option.textContent =
+      "No custom scenarios";
+
+    select.appendChild(option);
+
+    select.disabled = true;
+
+    donutCustomScenarioIndex = 0;
+
+    return;
+  }
+
+
+  select.disabled = false;
+
+
+  // Keep index valid if the last scenario was removed
+  donutCustomScenarioIndex =
+    Math.min(
+      donutCustomScenarioIndex,
+      scenarioConfigs.length - 1
+    );
+
+
+  scenarioConfigs.forEach((sc, i) => {
+
+    const option =
+      document.createElement("option");
+
+    option.value =
+      String(i);
+
+    option.textContent =
+      sc.name ||
+      `Scenario ${i + 1}`;
+
+    select.appendChild(option);
+
+  });
+
+
+  select.value =
+    String(donutCustomScenarioIndex);
+}
+
+
+function setupDonutCustomScenarioSelect(){
+
+  const select =
+    el("donutCustomScenarioSelect");
+
+  if (!select)
+    return;
+
+
+  select.addEventListener(
+    "change",
+    () => {
+
+      donutCustomScenarioIndex =
+        Math.max(
+          0,
+          Number(select.value) || 0
+        );
+
+      updateDonutComparisonNote();
+
+      // Cached simulations only — NO new FastAPI run
+      runSim(false);
+
+    }
+  );
+
+
+  refreshDonutCustomScenarioSelect();
+}
+
+// Which predefined scenario it is compared against
 let donutReferenceId = "bau";
 
 function setupDonutScenarioButtons(){
@@ -1536,155 +1679,9 @@ function setupScenarioToggles(){
 
 }
 
-function defaultScenarioState(index){
-  return {
-    name: `Scenario ${index + 1}`,
-
-    color: randomScenarioColor(),
-
-    globals: {
-      tmax: 50,
-      pop: 0.02,
-      n: 300,
-
-      selectedPlot: "none",
-      donutCmap: "Viridis",
-      rollOn: "off",
-      rollYears: 3,
-
-      muGrow: 0.002,
-      infl: 0.017,
-      lamRate: -0.005,
-      eta: 0.40,
-
-      allPlotsMode: false,
-    },
-
-    lands: []
-  };
-}
-
-let scenarios = [ defaultScenarioState(0) ];
-let activeScenario = 0;
-
 let selectedPlot = "none";
-let landsState = deepClone(scenarios[0].lands);
 let allPlotsMode = false;
 let sideView = "donut";
-
-function refreshScenarioSelect(){
-  const sel = el("scenarioSelect");
-  sel.innerHTML = "";
-  scenarios.forEach((sc, i) => {
-    const opt = document.createElement("option");
-    opt.value = String(i);
-    opt.textContent = sc.name || `Scenario ${i+1}`;
-    sel.appendChild(opt);
-  });
-  sel.value = String(activeScenario);
-}
-
-function pullUIIntoActiveScenario(){
-  const sc = scenarios[activeScenario];
-  sc.name = el("scenarioName").value || sc.name;
-
-  sc.globals.tmax = +el("tmax").value;
-  sc.globals.pop  = +el("pop").value;
-  sc.globals.n    = +el("n").value;
-  sc.globals.selectedPlot = selectedPlot;
-
-  sc.globals.donutCmap = el("donutCmap").value || "Viridis";
-  sc.globals.rollOn = el("rollOn").value;
-  sc.globals.rollYears = +el("rollYears").value;
-
-  sc.globals.muGrow = +el("muGrow").value;
-  sc.globals.infl   = +el("infl").value;
-  sc.globals.lamRate= +el("lamRate").value;
-  // sc.globals.theta  = +el("theta").value;
-  sc.globals.eta    = +el("eta").value;
-  // sc.globals.nu     = Math.max(1, +el("nu").value || 6.375e10);
-  sc.globals.allPlotsMode = allPlotsMode;
-
-  sc.lands = deepClone(landsState);
-}
-
-function pushScenarioToUI(idx){
-  const sc = scenarios[idx];
-  activeScenario = idx;
-
-  el("tmax").value = sc.globals.tmax;
-  el("pop").value  = sc.globals.pop;
-  el("n").value    = sc.globals.n;
-
-  selectedPlot = sc.globals.selectedPlot || "none";
-  el("plotSelect").value = selectedPlot;
-
-  el("scenarioName").value = sc.name;
-
-  el("donutCmap").value = sc.globals.donutCmap || "Viridis";
-  el("cmapLabel").textContent = el("donutCmap").value;
-
-  el("rollOn").value = sc.globals.rollOn || "off";
-  el("rollYears").value = sc.globals.rollYears || 3;
-
-  el("muGrow").value = sc.globals.muGrow ?? 0.014;
-  el("infl").value   = sc.globals.infl ?? 0.017;
-  el("lamRate").value= sc.globals.lamRate ?? 0.001;
-  // el("theta").value  = sc.globals.theta ?? 0.51;
-  // sc.globals.theta = sc.globals.theta ?? THETA_FIXED;
-  el("eta").value    = sc.globals.eta ?? 0.05;
-  // el("nu").value     = sc.globals.nu ?? 6.375e10;
-
-  allPlotsMode = !!sc.globals.allPlotsMode;
-  setAllPlotsMode(allPlotsMode, false);
-
-  landsState = deepClone(sc.lands);
-
-  renderLands();
-  updateShareTotal();
-  setGlobalLabels();
-  runSim();
-}
-
-// Scenario UI events
-el("scenarioSelect").addEventListener("change", (e) => {
-  const idx = +e.target.value;
-  pullUIIntoActiveScenario();
-  pushScenarioToUI(idx);
-  refreshScenarioSelect();
-});
-
-el("scenarioName").addEventListener("input", () => {
-
-  const customName =
-    el("scenarioName").value.trim() ||
-    "My scenario";
-
-  // Keep old scenario state compatible for now
-  if (
-    typeof scenarios !== "undefined" &&
-    scenarios[activeScenario]
-  ){
-    scenarios[activeScenario].name =
-      customName;
-
-    refreshScenarioSelect();
-  }
-
-  // Update doughnut label immediately.
-  // No FastAPI call.
-  updateDonutComparisonNote();
-  runSim(false);
-
-});
-
-el("newScenarioBtn").addEventListener("click", () => {
-  pullUIIntoActiveScenario();
-  const newIdx = scenarios.length;
-  scenarios.push(defaultScenarioState(newIdx));
-  refreshScenarioSelect();
-  pushScenarioToUI(newIdx);
-});
 
 function setGlobalLabels(){
   el("tmaxLabel").textContent = el("tmax").value + " yrs";
@@ -1707,375 +1704,1029 @@ function setGlobalLabels(){
   // el("nuLabel").textContent     = Number(+el("nu").value || 0).toExponential(2);
 }
 
-function updateShareTotal(){
-  const total = landsState.reduce((a,l)=>a + (Number(l.share)||0), 0);
-  const pct = total.toFixed(1) + "%";
-  const elTot = el("shareTotal");
-  if (elTot) elTot.textContent = pct;
-}
 
-function setLandLabels(i){
-  if (el(`shareLabel_${i}`)) el(`shareLabel_${i}`).textContent = `${landsState[i].share}%`;
-  if (el(`alphaLabel_${i}`)) el(`alphaLabel_${i}`).textContent = landsState[i].alpha.toFixed(2);
-  if (el(`s0Label_${i}`))    el(`s0Label_${i}`).textContent    = landsState[i].s0.toFixed(2);
-  if (el(`pmaxLabel_${i}`))  el(`pmaxLabel_${i}`).textContent  = landsState[i].pmax.toFixed(1);
-  if (el(`dLabel_${i}`))     el(`dLabel_${i}`).textContent     = landsState[i].dconst.toFixed(2);
-  if (el(`amaxLabel_${i}`))  el(`amaxLabel_${i}`).textContent  = landsState[i].alpha_max.toFixed(2);
-  if (el(`sTLabel_${i}`))    el(`sTLabel_${i}`).textContent    = landsState[i].sT.toFixed(2);
-  if (el(`rhoLabel_${i}`))   el(`rhoLabel_${i}`).textContent   = `${landsState[i].rho}`;
+// ===================================================
+// SCENARIO CARD LABELS
+// ===================================================
 
-  if (el(`FLabel_${i}`))     el(`FLabel_${i}`).textContent     = landsState[i].F.toFixed(2);
-  if (el(`zetaLabel_${i}`))  el(`zetaLabel_${i}`).textContent  = landsState[i].zeta.toFixed(2);
-  if (el(`D0Label_${i}`))    el(`D0Label_${i}`).textContent    = landsState[i].D0.toFixed(2);
+function setScenarioLabels(i){
 
-  if (el(`tauLabel_${i}`))
-    el(`tauLabel_${i}`).textContent = landsState[i].tau.toFixed(2);
+  const sc = scenarioConfigs[i];
+
+  if (!sc) return;
+
+  if (el(`alphaLabel_${i}`))
+    el(`alphaLabel_${i}`).textContent =
+      sc.alpha.toFixed(2);
+
+  if (el(`pmaxLabel_${i}`))
+    el(`pmaxLabel_${i}`).textContent =
+      sc.pmax.toFixed(1);
+
+  if (el(`dLabel_${i}`))
+    el(`dLabel_${i}`).textContent =
+      sc.dconst.toFixed(2);
+
+  if (el(`amaxLabel_${i}`))
+    el(`amaxLabel_${i}`).textContent =
+      sc.alpha_max.toFixed(2);
+
+  if (el(`sTLabel_${i}`))
+    el(`sTLabel_${i}`).textContent =
+      sc.sT.toFixed(2);
+
+  if (el(`rhoLabel_${i}`))
+    el(`rhoLabel_${i}`).textContent =
+      `${sc.rho}`;
+
+  if (el(`FLabel_${i}`))
+    el(`FLabel_${i}`).textContent =
+      sc.F.toFixed(2);
+
+  if (el(`zetaLabel_${i}`))
+    el(`zetaLabel_${i}`).textContent =
+      sc.zeta.toFixed(2);
+
+  if (el(`D0Label_${i}`))
+    el(`D0Label_${i}`).textContent =
+      sc.D0.toFixed(2);
 
   if (el(`muTauLabel_${i}`))
-    el(`muTauLabel_${i}`).textContent = landsState[i].mu_tau.toFixed(2);
+    el(`muTauLabel_${i}`).textContent =
+      sc.mu_tau.toFixed(2);
 
   if (el(`sigmaTauLabel_${i}`))
-    el(`sigmaTauLabel_${i}`).textContent = landsState[i].sigma_tau.toFixed(3);
+    el(`sigmaTauLabel_${i}`).textContent =
+      sc.sigma_tau.toFixed(3);
 
-  if (el(`ehLabel_${i}`))    el(`ehLabel_${i}`).textContent    = (+landsState[i].EH).toFixed(2);
-  if (el(`esLabel_${i}`))    el(`esLabel_${i}`).textContent    = (+landsState[i].ES).toFixed(2);
+  if (el(`ehLabel_${i}`))
+    el(`ehLabel_${i}`).textContent =
+      (+sc.EH).toFixed(2);
 
-  if (el(`scenLabel_${i}`))  el(`scenLabel_${i}`).textContent =
-    (landsState[i].scenario_name === "Fertiliser parabola") ? "g(F)·B(t)" : "D_const";
+  if (el(`esLabel_${i}`))
+    el(`esLabel_${i}`).textContent =
+      (+sc.ES).toFixed(2);
+
+  if (el(`scenLabel_${i}`))
+    el(`scenLabel_${i}`).textContent =
+      sc.scenario_name === "Fertiliser parabola"
+        ? "g(F)·B(t)"
+        : "D_const";
 }
 
-function renderLands(){
-  const container = el("landsContainer");
-  container.innerHTML = "";
 
-  if (landsState.length === 0){
-    const msg = document.createElement("div");
+// ===================================================
+// RENDER SCENARIO CARDS
+// ===================================================
+
+function renderScenarios(){
+
+  const container =
+    el("scenariosContainer");
+
+  container.innerHTML = "";
+  refreshDonutCustomScenarioSelect();
+
+
+  if (scenarioConfigs.length === 0){
+
+    const msg =
+      document.createElement("div");
+
     msg.className = "control";
-    msg.style.gridColumn = "1 / -1";
+
+    msg.style.gridColumn =
+      "1 / -1";
+
     msg.innerHTML = `
-      <h4>No scenario lands yet</h4>
-      <div class="small">Click <b>+ Add land</b> to add an intervention land. Baseline baseline will remain in the plots.</div>
+      <h4>No scenarios yet</h4>
+
+      <div class="small">
+        Click <b>+ Add scenario</b> to create a scenario.
+      </div>
     `;
+
     container.appendChild(msg);
-    refreshScenarioSelect();
+
     return;
   }
 
-  landsState.forEach((land, i) => {
-    if (land.EH === undefined || land.EH === null) land.EH = 1.6;
-    if (land.ES === undefined || land.ES === null) land.ES = 1.28;
 
-    const card = document.createElement("div");
-    card.className = "control";
+  scenarioConfigs.forEach((sc, i) => {
+
+    // Safety defaults
+    sc.n_lands =
+      Math.max(
+        1,
+        Math.round(
+          Number(sc.n_lands) || 1
+        )
+      );
+
+    if (sc.EH === undefined || sc.EH === null)
+      sc.EH = 1.5;
+
+    if (sc.ES === undefined || sc.ES === null)
+      sc.ES = 1.17;
+
+
+    const card =
+      document.createElement("div");
+
+    card.className =
+      "control";
+
 
     card.innerHTML = `
-      <h4>${land.name}</h4>
+
+      <h4>${sc.name}</h4>
+
+
+      <!-- ========================================= -->
+      <!-- SCENARIO IDENTITY -->
+      <!-- ========================================= -->
 
       <div class="row">
-        <div class="labelrow"><span>Name</span><span class="small"></span></div>
-        <input id="landName_${i}" type="text" value="${land.name}" />
+
+        <div class="labelrow">
+          <span>Name</span>
+          <span class="small"></span>
+        </div>
+
+        <input
+          id="scenarioConfigName_${i}"
+          type="text"
+          value="${sc.name}"
+        />
+
       </div>
 
-      <div class="row">
-        <div class="labelrow"><span>Share (%)</span><span id="shareLabel_${i}" class="small"></span></div>
-        <input id="share_${i}" type="number" min="0" step="0.1" value="${land.share}" />
-      </div>
 
       <div class="row">
-        <div class="labelrow"><span>Recovery model</span><span id="recLabel_${i}" class="small"></span></div>
+
+        <div class="labelrow">
+
+          <span>
+            <b>Number of lands</b>
+          </span>
+
+          <span class="small">
+            number of τᵢ samples
+          </span>
+
+        </div>
+
+        <input
+          id="nLands_${i}"
+          type="number"
+          min="1"
+          max="100"
+          step="1"
+          value="${sc.n_lands}"
+        />
+
+      </div>
+
+
+      <!-- ========================================= -->
+      <!-- RECOVERY -->
+      <!-- ========================================= -->
+
+      <div class="row">
+
+        <div class="labelrow">
+
+          <span>Recovery model</span>
+
+          <span
+            id="recLabel_${i}"
+            class="small">
+          </span>
+
+        </div>
+
         <select id="recovery_${i}">
-          <option value="Constant alpha" ${land.recovery==="Constant alpha"?"selected":""}>Constant α</option>
-          <option value="Logistic alpha(S)" ${land.recovery==="Logistic alpha(S)"?"selected":""}>Logistic α(S)</option>
+
+          <option
+            value="Constant alpha"
+            ${sc.recovery === "Constant alpha"
+              ? "selected"
+              : ""}>
+            Constant α
+          </option>
+
+          <option
+            value="Logistic alpha(S)"
+            ${sc.recovery === "Logistic alpha(S)"
+              ? "selected"
+              : ""}>
+            Logistic α(S)
+          </option>
+
         </select>
+
       </div>
 
-      <div class="row" id="alphaConstRow_${i}">
-        <div class="labelrow"><span>α (constant)</span><span id="alphaLabel_${i}" class="small"></span></div>
-        <input id="alpha_${i}" type="range" min="0" max="1" step="0.01" value="${land.alpha}">
+
+      <div
+        class="row"
+        id="alphaConstRow_${i}">
+
+        <div class="labelrow">
+
+          <span>α (constant)</span>
+
+          <span
+            id="alphaLabel_${i}"
+            class="small">
+          </span>
+
+        </div>
+
+        <input
+          id="alpha_${i}"
+          type="range"
+          min="0"
+          max="1"
+          step="0.01"
+          value="${sc.alpha}"
+        >
+
       </div>
+
 
       <div id="alphaLogisticBlock_${i}">
+
         <div class="row">
-          <div class="labelrow"><span>αmax</span><span id="amaxLabel_${i}" class="small"></span></div>
-          <input id="amax_${i}" type="range" min="0" max="1" step="0.01" value="${land.alpha_max}">
+
+          <div class="labelrow">
+
+            <span>αmax</span>
+
+            <span
+              id="amaxLabel_${i}"
+              class="small">
+            </span>
+
+          </div>
+
+          <input
+            id="amax_${i}"
+            type="range"
+            min="0"
+            max="1"
+            step="0.01"
+            value="${sc.alpha_max}"
+          >
+
         </div>
+
+
         <div class="row">
-          <div class="labelrow"><span>S_T</span><span id="sTLabel_${i}" class="small"></span></div>
-          <input id="sT_${i}" type="range" min="0" max="1" step="0.01" value="${land.sT}">
+
+          <div class="labelrow">
+
+            <span>S_T</span>
+
+            <span
+              id="sTLabel_${i}"
+              class="small">
+            </span>
+
+          </div>
+
+          <input
+            id="sT_${i}"
+            type="range"
+            min="0"
+            max="1"
+            step="0.01"
+            value="${sc.sT}"
+          >
+
         </div>
+
+
         <div class="row">
-          <div class="labelrow"><span>ρ</span><span id="rhoLabel_${i}" class="small"></span></div>
-          <input id="rho_${i}" type="range" min="1" max="200" step="1" value="${land.rho}">
+
+          <div class="labelrow">
+
+            <span>ρ</span>
+
+            <span
+              id="rhoLabel_${i}"
+              class="small">
+            </span>
+
+          </div>
+
+          <input
+            id="rho_${i}"
+            type="range"
+            min="1"
+            max="200"
+            step="1"
+            value="${sc.rho}"
+          >
+
         </div>
+
       </div>
 
-      <div class="row">
-        <div class="labelrow"><span>S₀</span><span id="s0Label_${i}" class="small"></span></div>
-        <input id="s0_${i}" type="range" min="0" max="1" step="0.01" value="${land.s0}">
-      </div>
+
+      <!-- ========================================= -->
+      <!-- SOIL / PRODUCTION -->
+      <!-- ========================================= -->
 
       <div class="row">
-        <div class="labelrow"><span>P_max</span><span id="pmaxLabel_${i}" class="small"></span></div>
-        <input id="pmax_${i}" type="range" min="0" max="40" step="0.5" value="${land.pmax}">
+
+        <div class="labelrow">
+
+          <span>P_max</span>
+
+          <span
+            id="pmaxLabel_${i}"
+            class="small">
+          </span>
+
+        </div>
+
+        <input
+          id="pmax_${i}"
+          type="range"
+          min="0"
+          max="40"
+          step="0.5"
+          value="${sc.pmax}"
+        >
+
       </div>
 
+
+      <!-- ========================================= -->
+      <!-- DEGRADATION -->
+      <!-- ========================================= -->
+
       <div class="row">
-        <div class="labelrow"><span>Degradation model</span><span id="scenLabel_${i}" class="small"></span></div>
+
+        <div class="labelrow">
+
+          <span>Degradation model</span>
+
+          <span
+            id="scenLabel_${i}"
+            class="small">
+          </span>
+
+        </div>
+
         <select id="scenario_${i}">
-          <option value="Fertiliser parabola" ${land.scenario_name==="Fertiliser parabola"?"selected":""}>Fertiliser parabola (g(F)·B)</option>
-          <option value="Constant degradation D" ${land.scenario_name==="Constant degradation D"?"selected":""}>Constant D_const</option>
+
+          <option
+            value="Fertiliser parabola"
+            ${sc.scenario_name === "Fertiliser parabola"
+              ? "selected"
+              : ""}>
+            Fertiliser parabola (g(F)·B)
+          </option>
+
+          <option
+            value="Constant degradation D"
+            ${sc.scenario_name === "Constant degradation D"
+              ? "selected"
+              : ""}>
+            Constant D_const
+          </option>
+
         </select>
+
       </div>
+
 
       <div id="fertBlock_${i}">
-        <div class="row">
-          <div class="labelrow"><span>F</span><span id="FLabel_${i}" class="small"></span></div>
-          <input id="F_${i}" type="range" min="0" max="3" step="0.001" value="${land.F}">
-        </div>
 
         <div class="row">
-          <div class="labelrow"><span>ζ (optimum)</span><span id="zetaLabel_${i}" class="small"></span></div>
-          <input id="zeta_${i}" type="range" min="0" max="3" step="0.05" value="${land.zeta}">
+
+          <div class="labelrow">
+
+            <span>F</span>
+
+            <span
+              id="FLabel_${i}"
+              class="small">
+            </span>
+
+          </div>
+
+          <input
+            id="F_${i}"
+            type="range"
+            min="0"
+            max="3"
+            step="0.001"
+            value="${sc.F}"
+          >
+
         </div>
 
+
         <div class="row">
-          <div class="labelrow"><span>D₀</span><span id="D0Label_${i}" class="small"></span></div>
-          <input id="D0_${i}" type="range" min="0" max="3" step="0.05" value="${land.D0}">
+
+          <div class="labelrow">
+
+            <span>ζ (optimum)</span>
+
+            <span
+              id="zetaLabel_${i}"
+              class="small">
+            </span>
+
+          </div>
+
+          <input
+            id="zeta_${i}"
+            type="range"
+            min="0"
+            max="3"
+            step="0.05"
+            value="${sc.zeta}"
+          >
+
         </div>
+
+
+        <div class="row">
+
+          <div class="labelrow">
+
+            <span>D₀</span>
+
+            <span
+              id="D0Label_${i}"
+              class="small">
+            </span>
+
+          </div>
+
+          <input
+            id="D0_${i}"
+            type="range"
+            min="0"
+            max="3"
+            step="0.05"
+            value="${sc.D0}"
+          >
+
+        </div>
+
       </div>
 
-      <div class="row" id="dConstRow_${i}">
-        <div class="labelrow"><span>D_const</span><span id="dLabel_${i}" class="small"></span></div>
-        <input id="d_${i}" type="range" min="0" max="1" step="0.01" value="${land.dconst}">
+
+      <div
+        class="row"
+        id="dConstRow_${i}">
+
+        <div class="labelrow">
+
+          <span>D_const</span>
+
+          <span
+            id="dLabel_${i}"
+            class="small">
+          </span>
+
+        </div>
+
+        <input
+          id="d_${i}"
+          type="range"
+          min="0"
+          max="1"
+          step="0.01"
+          value="${sc.dconst}"
+        >
+
       </div>
 
-      <div style="margin-top:6px; border-top: 1px solid rgba(0,0,0,0.10); padding-top:8px;">
-        <div class="small" style="font-weight:700; margin-bottom:4px;">
+
+      <!-- ========================================= -->
+      <!-- FARMING CYCLE -->
+      <!-- ========================================= -->
+
+      <div
+        style="
+          margin-top:6px;
+          border-top:1px solid rgba(0,0,0,0.10);
+          padding-top:8px;
+        ">
+
+        <div
+          class="small"
+          style="
+            font-weight:700;
+            margin-bottom:4px;
+          ">
           Farming cycle B(t)
         </div>
 
+
         <div class="row">
+
           <div class="labelrow">
-            <span>τ mode</span>
-            <span class="small"></span>
+
+            <span>μτ</span>
+
+            <span
+              id="muTauLabel_${i}"
+              class="small">
+            </span>
+
           </div>
 
-          <select id="tauMode_${i}">
-            <option value="fixed" ${land.tau_mode==="fixed" ? "selected" : ""}>
-              Fixed
-            </option>
-            <option value="sampled" ${land.tau_mode==="sampled" ? "selected" : ""}>
-              Sampled
-            </option>
-          </select>
+          <input
+            id="muTau_${i}"
+            type="range"
+            min="0.05"
+            max="0.95"
+            step="0.01"
+            value="${sc.mu_tau}"
+          >
+
         </div>
 
-        <div id="tauFixedBlock_${i}">
-          <div class="row">
-            <div class="labelrow">
-              <span>τ (regenerative duration)</span>
-              <span id="tauLabel_${i}" class="small"></span>
-            </div>
 
-            <input
-              id="tau_${i}"
-              type="range"
-              min="0.05"
-              max="0.95"
-              step="0.01"
-              value="${land.tau}">
+        <div class="row">
+
+          <div class="labelrow">
+
+            <span>στ</span>
+
+            <span
+              id="sigmaTauLabel_${i}"
+              class="small">
+            </span>
+
           </div>
+
+          <input
+            id="sigmaTau_${i}"
+            type="range"
+            min="0.001"
+            max="0.20"
+            step="0.001"
+            value="${sc.sigma_tau}"
+          >
+
         </div>
 
-        <div id="tauSampleBlock_${i}">
-          <div class="row">
-            <div class="labelrow">
-              <span>μτ</span>
-              <span id="muTauLabel_${i}" class="small"></span>
-            </div>
-
-            <input
-              id="muTau_${i}"
-              type="range"
-              min="0.05"
-              max="0.95"
-              step="0.01"
-              value="${land.mu_tau}">
-          </div>
-
-          <div class="row">
-            <div class="labelrow">
-              <span>στ</span>
-              <span id="sigmaTauLabel_${i}" class="small"></span>
-            </div>
-
-            <input
-              id="sigmaTau_${i}"
-              type="range"
-              min="0.001"
-              max="0.20"
-              step="0.001"
-              value="${land.sigma_tau}">
-          </div>
-        </div>
 
         <div class="small">
-          B(t)=0.1 during regenerative farming and B(t)=0.9 during intensive farming.
-          The onset phase is sampled independently each year.
+
+          Each scenario samples
+          <b>${sc.n_lands}</b>
+          regenerative durations τᵢ from the
+          scenario distribution.
+
+          B(t)=0.1 during regenerative farming
+          and B(t)=0.9 during intensive farming.
+
         </div>
+
       </div>
 
-      <div style="margin-top:6px; border-top: 1px solid rgba(0,0,0,0.10); padding-top:8px;">
-        <div class="small" style="font-weight:700; margin-bottom:4px;">Emissions factors (per land)</div>
 
-        <div class="row">
-          <div class="labelrow"><span>E_H (cultivation)</span><span id="ehLabel_${i}" class="small"></span></div>
-          <input id="eh_${i}" type="range" min="0" max="20" step="0.01" value="${land.EH}">
+      <!-- ========================================= -->
+      <!-- EMISSIONS -->
+      <!-- ========================================= -->
+
+      <div
+        style="
+          margin-top:6px;
+          border-top:1px solid rgba(0,0,0,0.10);
+          padding-top:8px;
+        ">
+
+        <div
+          class="small"
+          style="
+            font-weight:700;
+            margin-bottom:4px;
+          ">
+          Emissions factors
         </div>
 
+
         <div class="row">
-          <div class="labelrow"><span>E_S (cover/fallow)</span><span id="esLabel_${i}" class="small"></span></div>
-          <input id="es_${i}" type="range" min="-20" max="20" step="0.01" value="${land.ES}">
+
+          <div class="labelrow">
+
+            <span>E_H (cultivation)</span>
+
+            <span
+              id="ehLabel_${i}"
+              class="small">
+            </span>
+
+          </div>
+
+          <input
+            id="eh_${i}"
+            type="range"
+            min="0"
+            max="20"
+            step="0.01"
+            value="${sc.EH}"
+          >
+
         </div>
 
-        <div class="small">Units: tCO₂eq/(ha·yr). Total emissions are computed using Lᵢ and Bᵢ(t).</div>
+
+        <div class="row">
+
+          <div class="labelrow">
+
+            <span>E_S (cover/fallow)</span>
+
+            <span
+              id="esLabel_${i}"
+              class="small">
+            </span>
+
+          </div>
+
+          <input
+            id="es_${i}"
+            type="range"
+            min="-20"
+            max="20"
+            step="0.01"
+            value="${sc.ES}"
+          >
+
+        </div>
+
+
+        <div class="small">
+          Units: tCO₂eq/(ha·yr).
+          These factors apply to all lands represented
+          by this scenario.
+        </div>
+
       </div>
+
     `;
+
 
     container.appendChild(card);
 
-    const nameInp  = el(`landName_${i}`);
-    const shareInp = el(`share_${i}`);
-    const alphaInp = el(`alpha_${i}`);
-    const s0Inp    = el(`s0_${i}`);
-    const pmaxInp  = el(`pmax_${i}`);
-    const dInp     = el(`d_${i}`);
-    const recSel   = el(`recovery_${i}`);
-    const amaxInp  = el(`amax_${i}`);
-    const sTInp    = el(`sT_${i}`);
-    const rhoInp   = el(`rho_${i}`);
 
-    const scenSel   = el(`scenario_${i}`);
-    const fertBlock = el(`fertBlock_${i}`);
-    const dConstRow = el(`dConstRow_${i}`);
+    // =================================================
+    // INPUT REFERENCES
+    // =================================================
 
-    const FInp    = el(`F_${i}`);
-    const zetaInp = el(`zeta_${i}`);
-    const D0Inp   = el(`D0_${i}`);
+    const nameInp =
+      el(`scenarioConfigName_${i}`);
 
-    const tauModeInp  = el(`tauMode_${i}`);
-    const tauInp      = el(`tau_${i}`);
-    const muTauInp    = el(`muTau_${i}`);
-    const sigmaTauInp = el(`sigmaTau_${i}`);
+    const nLandsInp =
+      el(`nLands_${i}`);
 
-    const tauFixedBlock  = el(`tauFixedBlock_${i}`);
-    const tauSampleBlock = el(`tauSampleBlock_${i}`);
+    const alphaInp =
+      el(`alpha_${i}`);
 
-    const ehInp = el(`eh_${i}`);
-    const esInp = el(`es_${i}`);
+    const pmaxInp =
+      el(`pmax_${i}`);
 
-    const alphaConstRow = el(`alphaConstRow_${i}`);
-    const alphaLogBlock = el(`alphaLogisticBlock_${i}`);
+    const dInp =
+      el(`d_${i}`);
 
-    function applyTauVisibility(){
-      const sampled = landsState[i].tau_mode === "sampled";
+    const recSel =
+      el(`recovery_${i}`);
 
-      tauFixedBlock.style.display = sampled ? "none" : "block";
-      tauSampleBlock.style.display = sampled ? "block" : "none";
-    }
+    const amaxInp =
+      el(`amax_${i}`);
+
+    const sTInp =
+      el(`sT_${i}`);
+
+    const rhoInp =
+      el(`rho_${i}`);
+
+    const scenSel =
+      el(`scenario_${i}`);
+
+    const fertBlock =
+      el(`fertBlock_${i}`);
+
+    const dConstRow =
+      el(`dConstRow_${i}`);
+
+    const FInp =
+      el(`F_${i}`);
+
+    const zetaInp =
+      el(`zeta_${i}`);
+
+    const D0Inp =
+      el(`D0_${i}`);
+
+    const muTauInp =
+      el(`muTau_${i}`);
+
+    const sigmaTauInp =
+      el(`sigmaTau_${i}`);
+
+    const ehInp =
+      el(`eh_${i}`);
+
+    const esInp =
+      el(`es_${i}`);
+
+    const alphaConstRow =
+      el(`alphaConstRow_${i}`);
+
+    const alphaLogBlock =
+      el(`alphaLogisticBlock_${i}`);
+
+
+    // =================================================
+    // VISIBILITY
+    // =================================================
 
     function applyRecoveryVisibility(){
-      const isLog = (landsState[i].recovery === "Logistic alpha(S)");
-      alphaConstRow.style.display = isLog ? "none" : "block";
-      alphaLogBlock.style.display = isLog ? "block" : "none";
-      el(`recLabel_${i}`).textContent = isLog ? "α(S)" : "α";
+
+      const isLog =
+        scenarioConfigs[i].recovery ===
+        "Logistic alpha(S)";
+
+      alphaConstRow.style.display =
+        isLog ? "none" : "block";
+
+      alphaLogBlock.style.display =
+        isLog ? "block" : "none";
+
+      el(`recLabel_${i}`).textContent =
+        isLog ? "α(S)" : "α";
     }
+
 
     function applyScenarioVisibility(){
-      const isFert = landsState[i].scenario_name === "Fertiliser parabola";
 
-      fertBlock.style.display = isFert ? "block" : "none";
-      dConstRow.style.display = isFert ? "none" : "block";
+      const isFert =
+        scenarioConfigs[i].scenario_name ===
+        "Fertiliser parabola";
 
-      el(`scenLabel_${i}`).textContent = isFert ? "g(F)·B(t)" : "D_const";
+      fertBlock.style.display =
+        isFert ? "block" : "none";
+
+      dConstRow.style.display =
+        isFert ? "none" : "block";
+
+      el(`scenLabel_${i}`).textContent =
+        isFert
+          ? "g(F)·B(t)"
+          : "D_const";
     }
 
+
+    // =================================================
+    // UPDATE STATE
+    // =================================================
+
     const updateFromUI = () => {
-      landsState[i].name = nameInp.value || `Land ${i+1}`;
-      landsState[i].share = Math.max(0, +shareInp.value || 0);
 
-      landsState[i].recovery = recSel.value;
+      const current =
+        scenarioConfigs[i];
+
+
+      current.name =
+        nameInp.value ||
+        `Scenario ${i + 1}`;
+
+
+      current.n_lands =
+        Math.max(
+          1,
+          Math.round(
+            +nLandsInp.value || 1
+          )
+        );
+
+
+      current.recovery =
+        recSel.value;
+
+
+      current.alpha =
+        +alphaInp.value;
+
+      current.alpha_max =
+        +amaxInp.value;
+
+      current.sT =
+        +sTInp.value;
+
+      current.rho =
+        +rhoInp.value;
+
+      current.pmax =
+        +pmaxInp.value;
+
+
+      current.scenario_name =
+        scenSel.value;
+
+      current.dconst =
+        +dInp.value;
+
+
+      current.F =
+        +FInp.value;
+
+      current.zeta =
+        +zetaInp.value;
+
+      current.D0 =
+        +D0Inp.value;
+
+
+      current.mu_tau =
+        +muTauInp.value;
+
+      current.sigma_tau =
+        +sigmaTauInp.value;
+
+
+      current.EH =
+        +ehInp.value;
+
+      current.ES =
+        +esInp.value;
+
+
       applyRecoveryVisibility();
-
-      landsState[i].alpha = +alphaInp.value;
-      landsState[i].alpha_max = +amaxInp.value;
-      landsState[i].sT = +sTInp.value;
-      landsState[i].rho = +rhoInp.value;
-
-      landsState[i].s0 = +s0Inp.value;
-      landsState[i].pmax = +pmaxInp.value;
-
-      landsState[i].scenario_name = scenSel.value;
-      landsState[i].dconst = +dInp.value;
-
-      landsState[i].F = +FInp.value;
-      landsState[i].zeta = +zetaInp.value;
-      landsState[i].D0 = +D0Inp.value;
-
-      landsState[i].tau_mode = tauModeInp.value;
-      landsState[i].tau = +tauInp.value;
-      landsState[i].mu_tau = +muTauInp.value;
-      landsState[i].sigma_tau = +sigmaTauInp.value;
-
-      applyTauVisibility();
-
-      landsState[i].EH = +ehInp.value;
-      landsState[i].ES = +esInp.value;
-
       applyScenarioVisibility();
 
-      card.querySelector("h4").textContent = landsState[i].name;
-      setLandLabels(i);
-      updateShareTotal();
-      triggerCustomSim();
+      card.querySelector("h4").textContent =
+        current.name;
+
+      const donutOption =
+        el("donutCustomScenarioSelect")
+          ?.querySelector(
+            `option[value="${i}"]`
+          );
+
+      if (donutOption){
+        donutOption.textContent =
+          current.name;
+      }
+
+      if (
+        donutCustomScenarioIndex === i
+      ){
+        updateDonutComparisonNote();
+      }
+
+      setScenarioLabels(i);
+      // Only recompute the scenario that changed
+      triggerScenarioSim(i);
     };
 
-    [nameInp, shareInp, alphaInp, amaxInp, sTInp, rhoInp, s0Inp, pmaxInp, dInp, ehInp, esInp]
-      .forEach(inp => inp.addEventListener("input", updateFromUI));
-    recSel.addEventListener("change", updateFromUI);
 
-    [scenSel, FInp, zetaInp, D0Inp, tauInp, muTauInp, sigmaTauInp]
-      .forEach(inp => inp.addEventListener("input", updateFromUI));
+    // =================================================
+    // EVENTS
+    // =================================================
 
-    tauModeInp.addEventListener("change", updateFromUI);
-    scenSel.addEventListener("change", updateFromUI);
+    [
+      nameInp,
+      nLandsInp,
+      alphaInp,
+      amaxInp,
+      sTInp,
+      rhoInp,
+      pmaxInp,
+      dInp,
+      FInp,
+      zetaInp,
+      D0Inp,
+      muTauInp,
+      sigmaTauInp,
+      ehInp,
+      esInp
+    ].forEach(inp =>
+
+      inp.addEventListener(
+        "input",
+        updateFromUI
+      )
+
+    );
+
+
+    recSel.addEventListener(
+      "change",
+      updateFromUI
+    );
+
+
+    scenSel.addEventListener(
+      "change",
+      updateFromUI
+    );
+
 
     applyRecoveryVisibility();
     applyScenarioVisibility();
-    applyTauVisibility();
-    setLandLabels(i);
+    setScenarioLabels(i);
+
+
   });
 
-  refreshScenarioSelect();
 }
 
-// Add/remove land
-el("addLandBtn").addEventListener("click", () => {
-  if (landsState.length >= 10) return;
-  const n = landsState.length + 1;
-  landsState.push(defaultEditableLand(n));
-  renderLands();
-  updateShareTotal();
-  triggerCustomSim();
-});
 
-el("removeLandBtn").addEventListener("click", () => {
-  if (landsState.length <= 0) return;
-  landsState.pop();
-  renderLands();
-  updateShareTotal();
-  triggerCustomSim();
-});
+// ===================================================
+// ADD / REMOVE SCENARIOS
+// ===================================================
+
+el("addScenarioBtn").addEventListener(
+  "click",
+  () => {
+
+    if (scenarioConfigs.length >= 10)
+      return;
+
+
+    const n =
+      scenarioConfigs.length + 1;
+
+
+    scenarioConfigs.push(
+      defaultEditableScenario(n)
+    );
+
+
+    // Reserve matching result position
+    customScenarioResults.push(null);
+
+
+    renderScenarios();
+
+
+    // Only simulate the newly-created scenario
+    triggerScenarioSim(
+      scenarioConfigs.length - 1
+    );
+
+  }
+);
+
+
+el("removeScenarioBtn").addEventListener(
+  "click",
+  () => {
+
+    if (scenarioConfigs.length === 0)
+      return;
+
+
+    const removedIndex =
+      scenarioConfigs.length - 1;
+
+
+    // Cancel any pending simulation
+    const timer =
+      scenarioSimTimers.get(removedIndex);
+
+    if (timer){
+      clearTimeout(timer);
+    }
+
+
+    scenarioSimTimers.delete(
+      removedIndex
+    );
+
+    scenarioSimGenerations.delete(
+      removedIndex
+    );
+
+
+    // Remove config + matching result
+    scenarioConfigs.pop();
+
+    customScenarioResults.pop();
+
+
+
+    renderScenarios();
+
+
+    // Only redraw existing results.
+    // No API simulation necessary.
+    runSim(false);
+
+  }
+);
 
 function getPlotTMax(){
   return Math.max(
@@ -2259,11 +2910,10 @@ function updateDonutComparisonNote(){
     donutReferenceId;
 
   const customName =
-    el("scenarioName")?.value.trim() ||
-    "My scenario";
+    getCustomScenarioName();
 
   el("sidePanelNote").textContent =
-    `${customName} vs ${referenceName} — signed % difference (time average).`;
+    `${customName} vs ${referenceName} [ signed % difference (time average)].`;
 }
 
 function updateSideView(){
@@ -2416,8 +3066,6 @@ function setAllPlotsMode(on, rerun = true){
     app.classList.remove("all-plots");
     btn.textContent = "All plots";
   }
-
-  scenarios[activeScenario].globals.allPlotsMode = allPlotsMode;
 
   if (rerun){
     runSim(false);
@@ -2717,10 +3365,12 @@ function renderAllPlots({ t, smoothSeries }){
       smoothSeries,
       3,
       true,
-      data => weightedSeries(
-        data.soils,
-        getCustomLandWeights()
-      )
+      // custom scenarios
+      (data, sc) =>
+        weightedSeries(
+          data.soils,
+          getScenarioLandWeights(sc)
+        )
     ),
 
     "Index"
@@ -2882,10 +3532,10 @@ function renderAllPlots({ t, smoothSeries }){
       smoothSeries,
       3,
       false,
-      data => weightedSeries(
-        data.degradations,
-        getCustomLandWeights()
-      )
+      (data, sc) => weightedSeries(
+          data.degradations,
+          getScenarioLandWeights(sc)
+        )
     ),
 
     "D"
@@ -3096,10 +3746,100 @@ function renderAllPlots({ t, smoothSeries }){
 
 }
 
+function collectAllPlotsExportState(){
+
+  const plotDefs = [
+
+    ["soil", "Soil"],
+    ["prod", "Total supply (P)"],
+    ["supply_domestic", "Domestic production (P̃)"],
+    ["reinvest", "Reinvestment potential J(t)"],
+    ["pop", "Population"],
+    ["cal_demand", "Calorie demand"],
+    ["ssr", "Self-sufficiency"],
+    ["inc", "Real income"],
+    ["deg", "Degradation"],
+    ["emis", "Net emissions"],
+    ["infl", "Inflation index"],
+    ["lambda", "Redistribution factor"],
+    ["palma", "Palma ratio"],
+    ["gini", "Gini coefficient"],
+    ["food_price", "Food price index"],
+    ["food_insecurity", "Food insecurity index"],
+    ["inc_pdf", "Income distribution"]
+
+  ];
+
+
+  const visiblePlots = [];
+
+
+  for (const [key, title] of plotDefs){
+
+    const node =
+      el(`mini_${key}`);
+
+    if (
+      !node ||
+      !node.data ||
+      !node.data.length
+    ){
+      continue;
+    }
+
+
+    visiblePlots.push({
+
+      key,
+
+      title,
+
+      series:
+        node.data.map(trace => ({
+
+          name:
+            trace.name || key,
+
+          x:
+            trace.x
+              ? Array.from(trace.x)
+              : [],
+
+          y:
+            trace.y
+              ? Array.from(trace.y)
+              : []
+
+        }))
+
+    });
+
+  }
+
+
+  return visiblePlots;
+}
+
+
 // ---- export helpers ----
 function getSafeScenarioName(){
-  const name = (scenarios[activeScenario]?.name || `Scenario_${activeScenario+1}`).trim();
-  return name.replace(/[^\w\-]+/g, "_");
+
+  if (scenarioConfigs.length === 1){
+
+    const name =
+      scenarioConfigs[0]?.name ||
+      "scenario";
+
+    return name
+      .trim()
+      .replace(/[^\w\-]+/g, "_");
+  }
+
+  if (scenarioConfigs.length > 1){
+    return "multi_scenario_dashboard";
+  }
+
+  return "reference_scenarios";
 }
 
 function timestampForFilename(){
@@ -3138,42 +3878,348 @@ function rowsToCsv(rows){
 }
 
 function buildVisibleRowsForCsv(){
-  if (!lastRenderState || !lastRenderState.visiblePlots) return [];
 
-  const rowsByTime = new Map();
-  const plots = lastRenderState.visiblePlots;
-
-  for (const plot of plots){
-    const x = plot.x || [];
-    const seriesList = plot.series || [];
-
-    for (const s of seriesList){
-      const y = s.y || [];
-      const n = Math.min(x.length, y.length);
-
-      // Safe column name
-      const colName = `${plot.key}_${s.name}`
-        .replace(/\s+/g, "_")
-        .replace(/[^\w]/g, "");
-
-      for (let i = 0; i < n; i++){
-        const time = x[i];
-
-        if (!rowsByTime.has(time)){
-          rowsByTime.set(time, {
-            scenario_name: scenarios[activeScenario]?.name || `Scenario ${activeScenario+1}`,
-            mode: allPlotsMode ? "all_plots" : "single_plot",
-            selected_plot: selectedPlot,
-            time: time
-          });
-        }
-
-        rowsByTime.get(time)[colName] = y[i];
-      }
-    }
+  if (
+    !lastRenderState ||
+    !lastRenderState.visiblePlots
+  ){
+    return [];
   }
 
-  return Array.from(rowsByTime.values());
+
+  // ===================================================
+  // EXPORT TIME GRID
+  // ===================================================
+  //
+  // Prefer the actual grid from the first available
+  // user-created scenario.
+  //
+  // If there is no custom scenario, construct a grid
+  // from the dashboard T_max and points/year controls.
+  // ===================================================
+
+  const firstCustomData =
+    customScenarioResults.find(
+      data =>
+        data?.t &&
+        data.t.length > 1
+    );
+
+
+  let exportT;
+
+
+  if (firstCustomData){
+
+    exportT =
+      firstCustomData.t.slice();
+
+  } else {
+
+    const T =
+      +el("tmax").value;
+
+    const pointsPerYear =
+      +el("n").value || 20;
+
+    const nSteps =
+      Math.max(
+        1,
+        Math.round(
+          T * pointsPerYear
+        )
+      );
+
+
+    exportT =
+      Array.from(
+        { length: nSteps + 1 },
+
+        (_, i) =>
+          T * i / nSteps
+      );
+
+  }
+
+
+  // ===================================================
+  // FIND THE CORRECT X GRID FOR A SERIES
+  // ===================================================
+
+  function getSeriesX(
+    plot,
+    series
+  ){
+
+    const y =
+      series?.y || [];
+
+
+    // Newer export state may already contain x
+    if (
+      series?.x &&
+      series.x.length === y.length
+    ){
+      return series.x;
+    }
+
+
+    // Check whether this series belongs to one
+    // of the user-created scenarios.
+    const seriesName =
+      String(
+        series?.name || ""
+      );
+
+
+    for (
+      let i = 0;
+      i < scenarioConfigs.length;
+      i++
+    ){
+
+      const scName =
+        scenarioConfigs[i]?.name ||
+        `Scenario ${i + 1}`;
+
+      const customT =
+        customScenarioResults[i]?.t;
+
+
+      if (
+        customT &&
+        customT.length === y.length &&
+        (
+          seriesName === scName ||
+          seriesName.startsWith(
+            scName + " "
+          )
+        )
+      ){
+        return customT;
+      }
+
+    }
+
+
+    // Otherwise it is normally a reference scenario
+    if (
+      plot?.x &&
+      plot.x.length === y.length
+    ){
+      return plot.x;
+    }
+
+
+    return [];
+  }
+
+
+  // ===================================================
+  // LINEAR INTERPOLATION
+  // ===================================================
+
+  function interpolateSeries(
+    sourceX,
+    sourceY,
+    targetX
+  ){
+
+    if (
+      !sourceX?.length ||
+      !sourceY?.length ||
+      sourceX.length !== sourceY.length
+    ){
+      return new Array(
+        targetX.length
+      ).fill(null);
+    }
+
+
+    const out =
+      new Array(
+        targetX.length
+      );
+
+    let j = 0;
+
+    const last =
+      sourceX.length - 1;
+
+
+    for (
+      let i = 0;
+      i < targetX.length;
+      i++
+    ){
+
+      const xq =
+        targetX[i];
+
+
+      // Outside source range
+      if (
+        xq < sourceX[0] ||
+        xq > sourceX[last]
+      ){
+        out[i] = null;
+        continue;
+      }
+
+
+      while (
+        j < last - 1 &&
+        sourceX[j + 1] < xq
+      ){
+        j++;
+      }
+
+
+      const x0 =
+        sourceX[j];
+
+      const x1 =
+        sourceX[j + 1];
+
+      const y0 =
+        sourceY[j];
+
+      const y1 =
+        sourceY[j + 1];
+
+
+      if (xq === x0){
+
+        out[i] = y0;
+        continue;
+
+      }
+
+
+      if (
+        x1 === x0 ||
+        y0 === null ||
+        y1 === null ||
+        y0 === undefined ||
+        y1 === undefined
+      ){
+
+        out[i] = y0;
+        continue;
+
+      }
+
+
+      const f =
+        (xq - x0) /
+        (x1 - x0);
+
+
+      out[i] =
+        y0 +
+        f * (y1 - y0);
+
+    }
+
+
+    return out;
+  }
+
+
+  // ===================================================
+  // BUILD CSV
+  // ===================================================
+
+  const rows =
+    exportT.map(
+      time => ({
+
+        custom_scenario_count:
+          scenarioConfigs.length,
+
+        mode:
+          allPlotsMode
+            ? "all_plots"
+            : "single_plot",
+
+        selected_plot:
+          selectedPlot,
+
+        time
+
+      })
+    );
+
+
+  const plots =
+    lastRenderState.visiblePlots;
+
+
+  for (const plot of plots){
+
+    // Income PDF uses income on the x-axis,
+    // not time. Keep it out of this time-series CSV
+    // for now.
+    if (plot.key === "inc_pdf"){
+      continue;
+    }
+
+
+    const seriesList =
+      plot.series || [];
+
+
+    for (const series of seriesList){
+
+      const sourceY =
+        series.y || [];
+
+      const sourceX =
+        getSeriesX(
+          plot,
+          series
+        );
+
+
+      if (
+        !sourceX.length ||
+        !sourceY.length
+      ){
+        continue;
+      }
+
+
+      const exportY =
+        interpolateSeries(
+          sourceX,
+          sourceY,
+          exportT
+        );
+
+
+      const colName =
+        `${plot.key}_${series.name}`
+          .replace(/\s+/g, "_")
+          .replace(/[^\w]/g, "");
+
+
+      for (
+        let i = 0;
+        i < rows.length;
+        i++
+      ){
+
+        rows[i][colName] =
+          exportY[i];
+
+      }
+
+    }
+
+  }
+
+
+  return rows;
 }
 
 function exportVisibleCsv(){
@@ -3189,26 +4235,144 @@ function exportVisibleCsv(){
 }
 
 function exportScenarioJson(){
-  pullUIIntoActiveScenario();
 
   const payload = {
-    exported_at: new Date().toISOString(),
-    scenario_index: activeScenario,
-    scenario_name: scenarios[activeScenario]?.name || `Scenario ${activeScenario+1}`,
-    mode: allPlotsMode ? "all_plots" : "single_plot",
-    selected_plot: selectedPlot,
-    scenario: deepClone(scenarios[activeScenario]),
-    visible_plots_summary: (lastRenderState?.visiblePlots || []).map(p => ({
-      key: p.key,
-      title: p.title,
-      n_series: (p.series || []).length,
-      n_points: p.x ? p.x.length : 0
-    }))
+
+    exported_at:
+      new Date().toISOString(),
+
+    mode:
+      allPlotsMode
+        ? "all_plots"
+        : "single_plot",
+
+    selected_plot:
+      selectedPlot,
+
+
+    // ===============================================
+    // GLOBAL DASHBOARD / MODEL PARAMETERS
+    // ===============================================
+
+    global_parameters: {
+
+      T_max:
+        +el("tmax").value,
+
+      population_growth_rate:
+        +el("pop").value,
+
+      income_growth_rate:
+        +el("muGrow").value,
+
+      inflation_rate:
+        +el("infl").value,
+
+      redistribution_rate:
+        +el("lamRate").value,
+
+      eta:
+        +el("eta").value,
+
+      n_points:
+        +el("n").value,
+
+      rolling_average:
+        el("rollOn").value,
+
+      rolling_window_years:
+        +el("rollYears").value
+
+    },
+
+
+    // ===============================================
+    // USER-CREATED SCENARIOS
+    // ===============================================
+
+    custom_scenarios:
+      deepClone(
+        scenarioConfigs
+      ),
+
+
+    // ===============================================
+    // REFERENCE SCENARIOS CURRENTLY SHOWN
+    // ===============================================
+
+    visible_reference_scenarios:
+      getVisibleScenarioPresets()
+        .map(preset => ({
+          id: preset.id,
+          name: preset.name
+        })),
+
+
+    // ===============================================
+    // DOUGHNUT COMPARISON STATE
+    // ===============================================
+
+    doughnut_comparison: {
+
+      custom_scenario_index:
+        donutCustomScenarioIndex,
+
+      custom_scenario_name:
+        scenarioConfigs[
+          donutCustomScenarioIndex
+        ]?.name ?? null,
+
+      reference_scenario:
+        donutReferenceId
+
+    },
+
+
+    // ===============================================
+    // CURRENTLY RENDERED PLOTS
+    // ===============================================
+
+    visible_plots_summary:
+      (
+        lastRenderState?.visiblePlots ||
+        []
+      ).map(p => ({
+
+        key:
+          p.key,
+
+        title:
+          p.title,
+
+        n_series:
+          (p.series || []).length,
+
+        n_points:
+          p.x
+            ? p.x.length
+            : 0
+
+      }))
+
   };
 
-  const filename = `${getSafeScenarioName()}_parameters_${timestampForFilename()}.json`;
-  downloadTextFile(filename, JSON.stringify(payload, null, 2), "application/json;charset=utf-8");
+
+  const filename =
+    `scenario_parameters_${timestampForFilename()}.json`;
+
+
+  downloadTextFile(
+    filename,
+    JSON.stringify(
+      payload,
+      null,
+      2
+    ),
+    "application/json;charset=utf-8"
+  );
+
 }
+
 
 el("exportCsvBtn").addEventListener("click", exportVisibleCsv);
 el("exportJsonBtn").addEventListener("click", exportScenarioJson);
@@ -3307,13 +4471,31 @@ function setupPdfSlider(){
       if (target){
 
         target.series =
-          incomePdfState.scenarios.map(item => ({
+          incomePdfState.scenarios.map(item => {
 
-            name: item.name,
+            const y =
+              pdfAtTime(
+                item,
+                tt
+              );
 
-            y: item.pdf[idx].slice()
 
-          }));
+            return {
+
+              name:
+                item.name,
+
+              x:
+                item.x.slice(),
+
+              y:
+                y
+                  ? y.slice()
+                  : []
+
+            };
+
+          });
 
       }
 
@@ -3589,92 +4771,211 @@ function getVisibleScenarioPresets(){
 }
 
 function getCustomScenarioName(){
+
   return (
-    el("scenarioName")?.value.trim() ||
+    scenarioConfigs[
+      donutCustomScenarioIndex
+    ]?.name ||
     "My scenario"
   );
+
 }
 
 function pdfAtTime(item, targetTime){
 
-  if (!item?.pdf?.length){
+  if (
+    !item?.pdf?.length ||
+    !item?.x?.length
+  ){
     return null;
   }
+
 
   const times =
     item.t ?? [];
 
+
+  // No time information:
+  // just use the first available PDF
   if (!times.length){
-    return item.pdf[0];
+    return item.pdf[0] ?? null;
   }
 
-  let bestIndex = 0;
-  let bestDistance =
-    Math.abs(times[0] - targetTime);
 
-  for (let i = 1; i < times.length; i++){
+  // Important:
+  // never search beyond the number of PDF rows.
+  const n =
+    Math.min(
+      times.length,
+      item.pdf.length
+    );
+
+
+  if (n === 0){
+    return null;
+  }
+
+
+  let bestIndex = 0;
+
+  let bestDistance =
+    Math.abs(
+      Number(times[0]) -
+      Number(targetTime)
+    );
+
+
+  for (let i = 1; i < n; i++){
 
     const distance =
-      Math.abs(times[i] - targetTime);
+      Math.abs(
+        Number(times[i]) -
+        Number(targetTime)
+      );
+
 
     if (distance < bestDistance){
 
-      bestDistance = distance;
-      bestIndex = i;
+      bestDistance =
+        distance;
+
+      bestIndex =
+        i;
 
     }
 
   }
 
-  return item.pdf[bestIndex];
+
+  return (
+    item.pdf[bestIndex] ??
+    null
+  );
 }
 
 function getVisiblePdfScenarios(){
-  const items = getVisibleScenarioPresets()
-    .map(preset => {
-      const data = scenarioResults[preset.id];
-      if (!data?.income_x || !data?.income_pdf?.length) return null;
-      return {
-        id: preset.id,
-        name: preset.name,
-        x: data.income_x,
-        pdf: data.income_pdf,
-        t: data.income_pdf_time ?? data.t
-      };
-    })
-    .filter(Boolean);
 
-  if (
-  customScenarioResult?.income_x &&
-  customScenarioResult?.income_pdf?.length
-    ){
+  const customColors = [
+    "#8a2be2",
+    "#e63946",
+    "#2a9d8f",
+    "#f4a261",
+    "#457b9d",
+    "#e76f51",
+    "#6a994e",
+    "#bc6c25",
+    "#9b5de5",
+    "#00b4d8"
+  ];
+
+
+  // ===================================================
+  // PRECOMPUTED REFERENCE SCENARIOS
+  // ===================================================
+
+  const items =
+    getVisibleScenarioPresets()
+
+      .map(preset => {
+
+        const data =
+          scenarioResults[preset.id];
+
+        if (
+          !data?.income_x ||
+          !data?.income_pdf?.length
+        ){
+          return null;
+        }
+
+
+        return {
+
+          id:
+            preset.id,
+
+          isCustom:
+            false,
+
+          name:
+            preset.name,
+
+          x:
+            data.income_x,
+
+          pdf:
+            data.income_pdf,
+
+          t:
+            data.income_pdf_time ??
+            data.t
+
+        };
+
+      })
+
+      .filter(Boolean);
+
+
+  // ===================================================
+  // ALL USER-CREATED SCENARIOS
+  // ===================================================
+
+  customScenarioResults.forEach(
+    (data, index) => {
+
+      const sc =
+        scenarioConfigs[index];
+
+
+      if (
+        !sc ||
+        !data?.income_x ||
+        !data?.income_pdf?.length
+      ){
+        return;
+      }
+
 
       items.push({
 
-        id: "custom",
+        id:
+          `custom_${index}`,
 
-        name: getCustomScenarioName(),
+        isCustom:
+          true,
 
-        x: customScenarioResult.income_x,
+        customIndex:
+          index,
 
-        pdf: customScenarioResult.income_pdf,
+        name:
+          sc.name ||
+          `Scenario ${index + 1}`,
 
-        t: customScenarioResult.t
+        color:
+          customColors[
+            index % customColors.length
+          ],
+
+        x:
+          data.income_x,
+
+        pdf:
+          data.income_pdf,
+
+        t:
+          data.income_pdf_time ??
+          data.t
 
       });
 
     }
+  );
+
 
   return items;
 }
 
-function randomScenarioColor(){
-
-  const hue =
-    Math.floor(Math.random() * 360);
-
-  return `hsl(${hue}, 75%, 50%)`;
-}
 
 
 function makeScenarioTraces(
@@ -3764,159 +5065,278 @@ function makeScenarioTraces(
   // USER-CREATED SCENARIO
   // ===================================================
 
-  if (customScenarioResult){
+  // ===================================================
+// USER-CREATED SCENARIOS
+// ===================================================
 
-    const rawCustom =
-      getCustomSeries
-        ? getCustomSeries(
-            customScenarioResult
-          )
-        : getSeries(
-            customScenarioResult
-          );
+customScenarioResults.forEach(
+    (customData, index) => {
+
+      if (!customData)
+        return;
 
 
-    if (rawCustom){
+      const sc =
+        scenarioConfigs[index];
+
+      if (!sc)
+        return;
+
+
+      const rawCustom =
+        getCustomSeries
+
+          ? getCustomSeries(
+              customData,
+              sc,
+              index
+            )
+
+          : getSeries(
+              customData
+            );
+
+
+      if (!rawCustom)
+        return;
+
 
       const customT =
-        customScenarioResult?.t &&
-        customScenarioResult.t.length === rawCustom.length
-          ? customScenarioResult.t
+        customData?.t &&
+        customData.t.length === rawCustom.length
+
+          ? customData.t
+
           : t;
+
 
       const customY =
         doSmooth
-          ? smoothSeries(rawCustom, customT)
+
+          ? smoothSeries(
+              rawCustom,
+              customT
+            )
+
           : rawCustom;
 
 
-      // --- outline / edge behind the custom scenario ---
       traces.push({
 
         x: customT,
+
         y: customY,
 
         type: "scatter",
+
         mode: "lines",
 
-        name: getCustomScenarioName() + " outline",
-
-        showlegend: false,
-        hoverinfo: "skip",
-
-        line: {
-          width: width + 8,
-          color: "black"
-        }
-
-      });
-
-
-      // --- actual custom scenario line ---
-      traces.push({
-
-        x: customT,
-        y: customY,
-
-        type: "scatter",
-        mode: "lines",
-
-        name: getCustomScenarioName(),
+        name:
+          sc.name ||
+          `Scenario ${index + 1}`,
 
         opacity: 1.0,
 
         line: {
-          width: width + 3,
-          color: scenarios[activeScenario]?.color
-                  ?? "#8a2be2",
+
+          width: width + 2,
+
+          color:
+            [
+              "#8a2be2",
+              "#e63946",
+              "#2a9d8f",
+              "#f4a261",
+              "#457b9d",
+              "#e76f51",
+              "#6a994e",
+              "#bc6c25",
+              "#9b5de5",
+              "#00b4d8"
+            ][index % 10]
+
         }
 
       });
 
     }
-
-  }
+  );
 
 
   return traces;
 }
 
+function buildPayloadFromScenario(sc, overrides = {}) {
 
-
-function buildPayloadFromLands(lands, overrides = {}){
-  const sumShares = Math.max(lands.reduce((a,l)=>a + (+l.share||0), 0), 1e-9);
-
-  return {
-    T_max: +el("tmax").value,
-    n_points: +el("n").value,
-
-    population_growth_rate: +el("pop").value,
-
-    income_growth_rate:
-      overrides.muGrow ?? +el("muGrow").value,
-
-    inflation_rate: +el("infl").value,
-
-    redistribution_rate:
-      overrides.lamRate ?? +el("lamRate").value,
-
-    theta: THETA_FIXED,
-
-    eta:
-      overrides.eta ?? +el("eta").value,
-
-    nu: NU_FIXED,
-
-    lands: lands.map(l => {
-      const scenario_name = l.scenario_name || "Fertiliser parabola";
-      const deg_params = (scenario_name === "Fertiliser parabola")
-        ? { F: l.F, zeta: l.zeta, D0: l.D0 }
-        : { D_const: l.dconst };
-
-      return {
-        name: l.name,
-        alpha: l.alpha,
-        S0: l.s0,
-        scenario_name,
-        deg_params,
-        land_fraction: (+l.share || 0) / sumShares,
-        P_max: l.pmax,
-
-        recovery_name: l.recovery,
-        recovery_params: (l.recovery === "Logistic alpha(S)")
-          ? { alpha_max: l.alpha_max, rho: l.rho, S_T: l.sT }
-          : {},
-        
-        tau: l.tau,
-        sample_tau: l.tau_mode === "sampled",
-        mu_tau: l.mu_tau,
-        sigma_tau: l.sigma_tau,
-
-        E_H: +l.EH,
-        E_S: +l.ES,
-      };
-    })
-  };
-}
-
-function getCustomLandWeights(){
-
-  if (!landsState.length){
-    return [];
-  }
-
-  const total =
-    landsState.reduce(
-      (sum, land) =>
-        sum + (+land.share || 0),
-      0
-    ) || 1;
-
-  return landsState.map(
-    land =>
-      (+land.share || 0) / total
+  // Number of lands/parcels represented by this scenario.
+  // Each one receives its own sampled tau_i.
+  const nLands = Math.max(
+    1,
+    Math.round(Number(sc.n_lands) || 1)
   );
 
+
+  const scenario_name =
+    sc.scenario_name || "Fertiliser parabola";
+
+
+  const deg_params =
+    scenario_name === "Fertiliser parabola"
+      ? {
+          F: sc.F,
+          zeta: sc.zeta,
+          D0: sc.D0
+        }
+      : {
+          D_const: sc.dconst
+        };
+
+
+  const recovery_params =
+    sc.recovery === "Logistic alpha(S)"
+      ? {
+          alpha_max: sc.alpha_max,
+          rho: sc.rho,
+          S_T: sc.sT
+        }
+      : {};
+
+
+  // ---------------------------------------------------
+  // Create the N lands represented by this scenario
+  // ---------------------------------------------------
+  //
+  // All scenario parameters are shared.
+  // The backend will sample a different tau_i for
+  // each of these lands.
+  //
+  // For now all lands are equally weighted.
+  // ---------------------------------------------------
+
+  const lands = Array.from(
+    { length: nLands },
+
+    (_, i) => ({
+
+      name:
+        `${sc.name} - Land ${i + 1}`,
+
+      alpha:
+        sc.alpha,
+
+      S0:
+        0.5,
+
+      scenario_name,
+
+      deg_params: {
+        ...deg_params
+      },
+
+      // Equal share of the scenario land area
+      land_fraction:
+        1 / nLands,
+
+      P_max:
+        sc.pmax,
+
+      recovery_name:
+        sc.recovery,
+
+      recovery_params: {
+        ...recovery_params
+      },
+
+
+      // ------------------------------------------------
+      // TEMPORARY compatibility fields
+      // ------------------------------------------------
+      //
+      // The new model uses scenario-level mu_tau and
+      // sigma_tau below.
+      //
+      // Keep these fields in the land objects for now
+      // until we update the FastAPI schema.
+      // ------------------------------------------------
+
+      tau:
+        sc.mu_tau,
+
+      sample_tau:
+        true,
+
+      mu_tau:
+        sc.mu_tau,
+
+      sigma_tau:
+        sc.sigma_tau,
+
+
+      E_H:
+        +sc.EH,
+
+      E_S:
+        +sc.ES
+
+    })
+  );
+
+
+  return {
+
+    // =================================================
+    // GLOBAL MODEL PARAMETERS
+    // =================================================
+
+    T_max:
+      +el("tmax").value,
+
+    n_points:
+      +el("n").value,
+
+    population_growth_rate:
+      +el("pop").value,
+
+    income_growth_rate:
+      overrides.muGrow ??
+      +el("muGrow").value,
+
+    inflation_rate:
+      +el("infl").value,
+
+    redistribution_rate:
+      overrides.lamRate ??
+      +el("lamRate").value,
+
+    theta:
+      THETA_FIXED,
+
+    eta:
+      overrides.eta ??
+      +el("eta").value,
+
+    nu:
+      NU_FIXED,
+
+
+    // =================================================
+    // SCENARIO-LEVEL TAU DISTRIBUTION
+    // =================================================
+
+    mu_tau:
+      +sc.mu_tau,
+
+    sigma_tau:
+      +sc.sigma_tau,
+
+
+    // =================================================
+    // PARCELS / LANDS WITHIN THIS SCENARIO
+    // =================================================
+
+    lands
+
+  };
 }
 
 
@@ -3963,53 +5383,78 @@ function weightedSeries(seriesList, weights){
   return out;
 }
 
+function getScenarioLandWeights(sc){
+
+  const n = Math.max(
+    1,
+    Math.round(Number(sc?.n_lands) || 1)
+  );
+
+  return new Array(n).fill(1 / n);
+}
+
 async function runSim(recompute = true){
 
-  pullUIIntoActiveScenario();
   setGlobalLabels();
 
 
-  // ===================================================
-  // OFFICIAL PRECOMPUTED SCENARIOS
-  // ===================================================
-  // These are loaded from the saved .npz files.
-  // No official/reference scenario is simulated here.
-  // The loader is promise-cached, so the files are fetched once.
+// ===================================================
+// OFFICIAL PRECOMPUTED SCENARIOS
+// ===================================================
+// These are loaded from the saved .npz files.
+// No official/reference scenario is simulated here.
+// The loader is promise-cached, so the files are fetched once.
 
   await loadPrecomputedScenarios();
 
 
-  // ===================================================
-  // USER-CREATED SCENARIO
-  // ===================================================
-  // Preserve the existing recompute=true/false behaviour, but only
-  // recompute the user's editable scenario. The official scenarios above
-  // remain fixed and precomputed.
+// ===================================================
+// USER-CREATED SCENARIOS
+// ===================================================
 
-  if (recompute){
+if (recompute){
 
-    const generation = ++customSimGeneration;
+  const generation =
+    ++customSimGeneration;
 
-    if (landsState.length > 0){
 
-      const customData =
-        await fetchSim(
-          buildPayloadFromLands(landsState)
-        );
+  if (scenarioConfigs.length > 0){
 
-      // Ignore a stale response if another control changed while this
-      // request was running.
-      if (generation !== customSimGeneration){
-        return;
-      }
+    // Simulate every user-created scenario.
+    // Each scenario becomes one independent API request.
+    const results =
+      await Promise.all(
 
-      customScenarioResult =
-        customData;
+        scenarioConfigs.map(sc =>
+          fetchSim(
+            buildPayloadFromScenario(sc)
+          )
+        )
+
+      );
+
+
+    // Ignore stale results if controls changed
+    // while the simulations were running.
+    if (generation !== customSimGeneration){
+      return;
     }
-    else {
-      customScenarioResult = null;
-    }
+
+
+    customScenarioResults =
+      results;
+
+
+
   }
+
+  else {
+
+    customScenarioResults = [];
+
+
+  }
+}
 
 
   // ===================================================
@@ -4028,29 +5473,17 @@ async function runSim(recompute = true){
   const t = bauData.t;
 
 
-  // Compatibility for older rendering/export code:
-  // scenarioData now means the user-created scenario.
-  const scenarioData =
-    customScenarioResult ?? null;
-
-  const hasScenarioData =
-    !!scenarioData;
-
-  function scenarioWeights(){
-    if (!hasScenarioData || landsState.length === 0) return [];
-    const sum = landsState.reduce((a,l)=>a+(+l.share||0), 0) || 1;
-    return landsState.map(l => (+l.share||0)/sum);
-  }
-
-
   function smoothSeriesTrapezoid(y, t){
-    const sc = scenarios[activeScenario];
-    const on = (sc?.globals?.rollOn || "off") === "on";
+    const on = el("rollOn").value === "on";
+
     if (!on) return y;
     if (!y?.length) return y;
     if (!t || t.length !== y.length || y.length < 2) return y;
 
-    const W = Math.max(0.1, +sc?.globals?.rollYears || 3);
+    const W = Math.max(
+      0.1,
+      +el("rollYears").value || 3
+    );
     const n = y.length;
 
     const A = new Array(n).fill(0);
@@ -4106,76 +5539,213 @@ async function runSim(recompute = true){
 
   function smoothSeries(y, t){ return smoothSeriesTrapezoid(y, t); }
 
+ // ===================================================
+  // DOUGHNUT:
+  // selected user-created scenario vs selected preset
   // ===================================================
-  // CUSTOM SCENARIO SERIES (used by doughnut + legacy export)
-  // ===================================================
 
-  const bau_soil = bauData.soils[0];
-  const bau_deg  = bauData.degradations?.[0] ?? null;
+  const donutScenarioData =
+    customScenarioResults[
+      donutCustomScenarioIndex
+    ] ?? null;
 
-  const w = scenarioWeights();
-  const sc_soil = hasScenarioData
-    ? weightedSeries(scenarioData.soils, w)
-    : null;
-  const sc_deg = hasScenarioData
-    ? weightedSeries(scenarioData.degradations, w)
-    : null;
+  const donutScenarioConfig =
+    scenarioConfigs[
+      donutCustomScenarioIndex
+    ] ?? null;
 
-  const bau_prod = getBoostedProductionSeries(bauData);
-  const bau_prod_soil = getSoilProductionSeries(bauData);
-  const bau_J = getReinvestmentSeries(bauData);
+  const hasDonutScenarioData =
+    !!donutScenarioData &&
+    !!donutScenarioConfig;
 
-  const sc_prod = hasScenarioData ? getBoostedProductionSeries(scenarioData) : null;
-  const sc_prod_soil = hasScenarioData ? getSoilProductionSeries(scenarioData) : null;
-  const sc_J = hasScenarioData ? getReinvestmentSeries(scenarioData) : null;
-  const sc_pop = hasScenarioData ? scenarioData.population : null;
-  const sc_cal_demand = hasScenarioData ? scenarioData.food_consumption : null;
-  const sc_ssr = hasScenarioData ? scenarioData.self_sufficiency_ratio : null;
-  const sc_inc = hasScenarioData ? scenarioData.average_real_income : null;
-  const sc_harv = hasScenarioData ? scenarioData.total_harvest : null;
-  const sc_emis = hasScenarioData ? scenarioData.total_emissions : null;
-  const sc_palma = hasScenarioData ? scenarioData.palma_ratio : null;
-  const sc_gini = hasScenarioData ? scenarioData.gini_coefficient : null;
-  const sc_food_price = hasScenarioData ? getFoodPriceSeries(scenarioData) : null;
-  const sc_food_insecurity = hasScenarioData ? getFoodSecuritySeries(scenarioData) : null;
-
-  // ===================================================
-  // DOUGHNUT: user-created scenario vs selected preset
-  // ===================================================
 
   const referenceData =
-    scenarioResults[donutReferenceId] ?? scenarioResults.bau;
+    scenarioResults[donutReferenceId]
+    ?? scenarioResults.bau;
 
-  if (hasScenarioData && referenceData){
 
-    const referenceSoil = referenceData.soils?.[0] ?? null;
-    const referenceDeg = referenceData.degradations?.[0] ?? null;
-    const referenceProd = getBoostedProductionSeries(referenceData);
-    const referenceSSR = referenceData.self_sufficiency_ratio ?? null;
-    const referenceEmis = referenceData.total_emissions ?? null;
-    const referenceFoodPrice = getFoodPriceSeries(referenceData);
-    const referenceFoodInsecurity = getFoodSecuritySeries(referenceData);
+  if (
+    hasDonutScenarioData &&
+    referenceData
+  ){
 
-    const customT = scenarioData.t ?? t;
-    const referenceT = referenceData.t ?? t;
+    // -----------------------------------------------
+    // Selected custom scenario series
+    // -----------------------------------------------
+
+    const donutWeights =
+      getScenarioLandWeights(
+        donutScenarioConfig
+      );
+
+
+    const donutSoil =
+      weightedSeries(
+        donutScenarioData.soils,
+        donutWeights
+      );
+
+
+    const donutDeg =
+      donutScenarioData.degradations
+        ? weightedSeries(
+            donutScenarioData.degradations,
+            donutWeights
+          )
+        : null;
+
+
+    const donutProd =
+      getBoostedProductionSeries(
+        donutScenarioData
+      );
+
+
+    const donutSSR =
+      donutScenarioData
+        .self_sufficiency_ratio;
+
+
+    const donutEmis =
+      donutScenarioData
+        .total_emissions;
+
+
+    const donutFoodPrice =
+      getFoodPriceSeries(
+        donutScenarioData
+      );
+
+
+    const donutFoodInsecurity =
+      getFoodSecuritySeries(
+        donutScenarioData
+      );
+
+
+    // -----------------------------------------------
+    // Reference scenario series
+    // -----------------------------------------------
+
+    const referenceSoil =
+      referenceData.soils?.[0] ?? null;
+
+    const referenceDeg =
+      referenceData.degradations?.[0] ?? null;
+
+    const referenceProd =
+      getBoostedProductionSeries(
+        referenceData
+      );
+
+    const referenceSSR =
+      referenceData
+        .self_sufficiency_ratio ?? null;
+
+    const referenceEmis =
+      referenceData
+        .total_emissions ?? null;
+
+    const referenceFoodPrice =
+      getFoodPriceSeries(
+        referenceData
+      );
+
+    const referenceFoodInsecurity =
+      getFoodSecuritySeries(
+        referenceData
+      );
+
+
+    const customT =
+      donutScenarioData.t ?? t;
+
+    const referenceT =
+      referenceData.t ?? t;
+
 
     const donutValues = [
-      signedPctImprovementAverage(sc_soil, referenceSoil, SIGN.soil, customT, referenceT),
-      signedPctImprovementAverage(sc_prod, referenceProd, SIGN.prod, customT, referenceT),
-      signedPctImprovementAverage(sc_ssr, referenceSSR, SIGN.ssr, customT, referenceT),
-      signedPctImprovementAverage(sc_deg, referenceDeg, SIGN.deg, customT, referenceT),
-      signedPctImprovementAverage(sc_emis, referenceEmis, SIGN.emis, customT, referenceT),
-      signedPctImprovementAverage(sc_food_price, referenceFoodPrice, SIGN.food_price, customT, referenceT),
-      signedPctImprovementAverage(sc_food_insecurity, referenceFoodInsecurity, SIGN.food_insecurity, customT, referenceT)
-    ].map(v => clamp(v, DONUT_CMIN, DONUT_CMAX));
+
+      signedPctImprovementAverage(
+        donutSoil,
+        referenceSoil,
+        SIGN.soil,
+        customT,
+        referenceT
+      ),
+
+      signedPctImprovementAverage(
+        donutProd,
+        referenceProd,
+        SIGN.prod,
+        customT,
+        referenceT
+      ),
+
+      signedPctImprovementAverage(
+        donutSSR,
+        referenceSSR,
+        SIGN.ssr,
+        customT,
+        referenceT
+      ),
+
+      signedPctImprovementAverage(
+        donutDeg,
+        referenceDeg,
+        SIGN.deg,
+        customT,
+        referenceT
+      ),
+
+      signedPctImprovementAverage(
+        donutEmis,
+        referenceEmis,
+        SIGN.emis,
+        customT,
+        referenceT
+      ),
+
+      signedPctImprovementAverage(
+        donutFoodPrice,
+        referenceFoodPrice,
+        SIGN.food_price,
+        customT,
+        referenceT
+      ),
+
+      signedPctImprovementAverage(
+        donutFoodInsecurity,
+        referenceFoodInsecurity,
+        SIGN.food_insecurity,
+        customT,
+        referenceT
+      )
+
+    ].map(
+      v => clamp(
+        v,
+        DONUT_CMIN,
+        DONUT_CMAX
+      )
+    );
+
 
     const referencePreset =
-      SCENARIO_PRESETS.find(s => s.id === donutReferenceId);
+      SCENARIO_PRESETS.find(
+        s =>
+          s.id === donutReferenceId
+      );
+
 
     const referenceName =
-      referencePreset?.name || donutReferenceId;
+      referencePreset?.name ||
+      donutReferenceId;
 
-    const customName = getCustomScenarioName();
+
+    const customName =
+      getCustomScenarioName();
+
 
     renderDonutWithHeat(
       donutValues,
@@ -4183,20 +5753,25 @@ async function runSim(recompute = true){
       referenceName
     );
 
+
     updateDonutComparisonNote();
 
   }
   else {
-    Plotly.purge("plotDonut");
+
+    Plotly.purge(
+      "plotDonut"
+    );
+
 
     if (sideView !== "system"){
-      el("sidePanelNote").textContent =
-        "Add at least one scenario land in Controls to compare your scenario with a predefined scenario.";
-    }
-  }
 
-  const incXAll = hasScenarioData ? scenarioData.income_x : bauData.income_x;
-  const incPDFAll = hasScenarioData ? scenarioData.income_pdf : bauData.income_pdf;
+      el("sidePanelNote").textContent =
+        "Add a custom scenario in Controls to compare it with a predefined scenario.";
+
+    }
+
+  }
 
   lastRenderState = {
     mode: allPlotsMode ? "all_plots" : "single_plot",
@@ -4206,260 +5781,59 @@ async function runSim(recompute = true){
   };
 
   if (allPlotsMode){
-    setPdfControlsVisible(false);
 
-    renderAllPlots({
+  setPdfControlsVisible(false);
+
+
+  renderAllPlots({
     t,
     smoothSeries
   });
 
-    const visiblePlots = [];
 
-    visiblePlots.push({
-      key: "soil",
-      title: "Soil",
-      x: t.slice(),
-      series: [
-        { name: "BAU", y: smoothSeries(bauData.soils[0], t).slice() },
-        ...(hasScenarioData
-          ? scenarioData.land_names.map((name, i) => ({
-              name,
-              y: smoothSeries(scenarioData.soils[i], t).slice()
-            }))
-          : [])
-      ]
-    });
+  lastRenderState.visiblePlots =
+    collectAllPlotsExportState();
 
-    visiblePlots.push({
-      key: "prod",
-      title: "Production",
-      x: t.slice(),
-      series: [
-        { name: "Baseline boosted P", y: smoothSeries(bau_prod, t).slice() },
-        { name: "Baseline soil P~", y: smoothSeries(bau_prod_soil, t).slice() },
-        ...(hasScenarioData
-          ? scenarioData.land_names.map((name, i) => ({
-              name: `${name} soil P~`,
-              y: smoothSeries(scenarioData.production_by_land[i], t).slice()
-            }))
-          : []),
-        ...(hasScenarioData
-          ? [
-              { name: "Scenario soil P~", y: smoothSeries(sc_prod_soil, t).slice() },
-              { name: "Scenario boosted P", y: smoothSeries(sc_prod, t).slice() }
-            ]
-          : [])
-      ]
-    });
 
-    if (bau_J){
-      visiblePlots.push({
-        key: "reinvest",
-        title: "Reinvestment J(t)",
-        x: t.slice(),
-        series: [
-          { name: "Baseline", y: smoothSeries(bau_J, t).slice() },
-          ...(hasScenarioData && sc_J ? [{ name: "Scenario", y: smoothSeries(sc_J, t).slice() }] : [])
-        ]
-      });
-    }
+  setTimeout(() => {
 
-    visiblePlots.push({
-      key: "pop",
-      title: "Population",
-      x: t.slice(),
-      series: [
-        { name: "Baseline", y: smoothSeries(bauData.population, t).slice() },
-        ...(hasScenarioData ? [{ name: "Scenario", y: smoothSeries(scenarioData.population, t).slice() }] : [])
-      ]
-    });
-
-    visiblePlots.push({
-      key: "cal_demand",
-      title: "Calorie demand",
-      x: t.slice(),
-      series: [
-        { name: "Baseline", y: smoothSeries(bauData.food_consumption, t).slice() },
-        ...(hasScenarioData ? [{ name: "Scenario", y: smoothSeries(scenarioData.food_consumption, t).slice() }] : [])
-      ]
-    });
-
-    visiblePlots.push({
-      key: "ssr",
-      title: "Self-sufficiency",
-      x: t.slice(),
-      series: [
-        { name: "Baseline", y: smoothSeries(bauData.self_sufficiency_ratio, t).slice() },
-        ...(hasScenarioData ? [{ name: "Scenario", y: smoothSeries(scenarioData.self_sufficiency_ratio, t).slice() }] : [])
-      ]
-    });
-
-    visiblePlots.push({
-      key: "inc",
-      title: "Real income",
-      x: t.slice(),
-      series: [
-        { name: "Baseline", y: smoothSeries(bauData.average_real_income, t).slice() },
-        ...(hasScenarioData ? [{ name: "Scenario", y: smoothSeries(scenarioData.average_real_income, t).slice() }] : [])
-      ]
-    });
-
-    const degradationExportSeries = [
-      ...(bauData.degradations?.[0]
-        ? [{
-            name: "Baseline",
-            y: bauData.degradations[0].slice()
-          }]
-        : []),
-
-      ...(hasScenarioData && scenarioData.degradations
-        ? scenarioData.land_names.map((name, i) => ({
-            name,
-            y: scenarioData.degradations[i].slice()
-          }))
-        : []),
-
-      ...(hasScenarioData && scenarioData.degradations
-        ? [{
-            name: "Scenario total (area-weighted)",
-            y: weightedSeries(
-              scenarioData.degradations,
-              getCustomLandWeights()
-            )
-          }]
-        : [])
+    const ids = [
+      "mini_soil",
+      "mini_prod",
+      "mini_supply_domestic",
+      "mini_reinvest",
+      "mini_pop",
+      "mini_cal_demand",
+      "mini_ssr",
+      "mini_inc",
+      "mini_deg",
+      "mini_emis",
+      "mini_infl",
+      "mini_lambda",
+      "mini_palma",
+      "mini_gini",
+      "mini_food_price",
+      "mini_food_insecurity",
+      "mini_inc_pdf"
     ];
 
-    if (degradationExportSeries.length){
-      visiblePlots.push({
-        key: "deg",
-        title: "Degradation",
-        x: t.slice(),
-        series: degradationExportSeries
-      });
-    }
 
-    // if (bauData.total_harvest){
-    //   visiblePlots.push({
-    //     key: "harvest",
-    //     title: "Harvest",
-    //     x: t.slice(),
-    //     series: [
-    //       { name: "BAU", y: smoothSeries(bauData.total_harvest, t).slice() },
-    //       ...(hasScenarioData && scenarioData.total_harvest ? [{ name: "Scenario", y: smoothSeries(scenarioData.total_harvest, t).slice() }] : [])
-    //     ]
-    //   });
-    // }
+    ids.forEach(id => {
 
-    if (bauData.total_emissions){
-      visiblePlots.push({
-        key: "emis",
-        title: "Net emissions",
-        x: t.slice(),
-        series: [
-          { name: "Baseline total", y: smoothSeries(bauData.total_emissions, t).slice() },
-          ...(hasScenarioData && scenarioData.total_emissions ? [{ name: "Scenario total", y: smoothSeries(scenarioData.total_emissions, t).slice() }] : [])
-        ]
-      });
-    }
+      const node =
+        document.getElementById(id);
 
-    if (bauData.inflation_index){
-      visiblePlots.push({
-        key: "infl",
-        title: "Inflation index",
-        x: t.slice(),
-        series: [
-          { name: "Inflation", y: smoothSeries(hasScenarioData ? scenarioData.inflation_index : bauData.inflation_index, t).slice() }
-        ]
-      });
-    }
+      if (node){
+        Plotly.Plots.resize(node);
+      }
 
-    if (bauData.redistribution_lambda){
-      visiblePlots.push({
-        key: "lambda",
-        title: "Redistribution λ",
-        x: t.slice(),
-        series: [
-          { name: "λ(t)", y: smoothSeries(hasScenarioData ? scenarioData.redistribution_lambda : bauData.redistribution_lambda, t).slice() }
-        ]
-      });
-    }
+    });
 
-    if (bauData.palma_ratio){
-      visiblePlots.push({
-        key: "palma",
-        title: "Palma ratio",
-        x: t.slice(),
-        series: [
-          { name: "Baseline", y: smoothSeries(bauData.palma_ratio, t).slice() },
-          ...(hasScenarioData ? [{ name: "Scenario", y: smoothSeries(scenarioData.palma_ratio, t).slice() }] : [])
-        ]
-      });
-    }
+  }, 50);
 
-    if (bauData.gini_coefficient){
-      visiblePlots.push({
-        key: "gini",
-        title: "Gini coefficient",
-        x: t.slice(),
-        series: [
-          { name: "Baseline", y: smoothSeries(bauData.gini_coefficient, t).slice() },
-          ...(hasScenarioData ? [{ name: "Scenario", y: smoothSeries(scenarioData.gini_coefficient, t).slice() }] : [])
-        ]
-      });
-    }
 
-    if (bauData.food_price_index){
-      visiblePlots.push({
-        key: "food_price",
-        title: "Food price index",
-        x: t.slice(),
-        series: [
-          { name: "Baseline", y: smoothSeries(bauData.food_price_index, t).slice() },
-          ...(hasScenarioData && scenarioData.food_price_index ? [{ name: "Scenario", y: smoothSeries(scenarioData.food_price_index, t).slice() }] : [])
-        ]
-      });
-    }
-
-    if (bauData.food_insecurity_index){
-      visiblePlots.push({
-        key: "food_insecurity",
-        title: "Food insecurity index",
-        x: t.slice(),
-        series: [
-          { name: "Baseline", y: smoothSeries(bauData.food_insecurity_index, t).slice() },
-          ...(hasScenarioData && scenarioData.food_insecurity_index ? [{ name: "Scenario", y: smoothSeries(scenarioData.food_insecurity_index, t).slice() }] : [])
-        ]
-      });
-    }
-
-    if (incXAll && incPDFAll && incPDFAll.length){
-      visiblePlots.push({
-        key: "inc_pdf",
-        title: "Income distribution",
-        x: incXAll.slice(),
-        series: [
-          { name: "Income PDF", y: incPDFAll[incPDFAll.length - 1].slice() }
-        ]
-      });
-    }
-
-    lastRenderState.visiblePlots = visiblePlots;
-
-    setTimeout(() => {
-      const ids = [
-        "mini_soil","mini_prod","mini_supply_domestic","mini_reinvest","mini_pop","mini_cal_demand","mini_ssr","mini_inc",
-        "mini_deg","mini_harvest","mini_emis","mini_infl","mini_lambda",
-        "mini_palma","mini_gini","mini_food_price","mini_food_insecurity","mini_inc_pdf"
-      ];
-      ids.forEach(id => {
-        const node = document.getElementById(id);
-        if (node) Plotly.Plots.resize(node);
-      });
-    }, 0);
-
-    return;
-  }
+  return;
+}
 
   setSinglePlotInfoKeys();
 
@@ -4483,11 +5857,11 @@ const soilTraces =
     true,
 
     // custom scenario
-    data =>
-      weightedSeries(
-        data.soils,
-        getCustomLandWeights()
-      )
+    (data, sc) =>
+    weightedSeries(
+      data.soils,
+      getScenarioLandWeights(sc)
+    )
 
   );
 
@@ -4566,12 +5940,6 @@ lastRenderState.visiblePlots.push({
   }
 
   showSecondary(true);
-
-  const infl = hasScenarioData ? scenarioData.inflation_index : bauData.inflation_index;
-  const lam = hasScenarioData ? scenarioData.redistribution_lambda : bauData.redistribution_lambda;
-
-  const incX = hasScenarioData ? scenarioData.income_x : bauData.income_x;
-  const incPDF = hasScenarioData ? scenarioData.income_pdf : bauData.income_pdf;
 
   if (selectedPlot === "prod"){
     setPdfControlsVisible(false);
@@ -4769,10 +6137,17 @@ lastRenderState.visiblePlots.push({
       smoothSeries
     );
 
+    const layout = commonLayout(
+      "Real income",
+      "I(t)"
+    );
+
+    layout.yaxis.range=[5000,70000]
+
     Plotly.react(
       "plotMain",
       traces,
-      commonLayout("Real income", "£ (real)"),
+      layout,
       {
         displayModeBar:false,
         responsive:true
@@ -4808,11 +6183,11 @@ lastRenderState.visiblePlots.push({
     false,
 
     // custom scenario
-    data =>
-      weightedSeries(
-        data.degradations,
-        getCustomLandWeights()
-      )
+    (data, sc) =>
+    weightedSeries(
+      data.degradations,
+      getScenarioLandWeights(sc)
+    )
 
   );
 
@@ -5102,168 +6477,375 @@ lastRenderState.visiblePlots.push({
     setPdfControlsVisible(true);
 
 
-    // --------------------------------------------------
-    // Collect income distributions from visible scenarios
-    // --------------------------------------------------
+    // ===================================================
+    // AVAILABLE PDF SCENARIOS
+    // ===================================================
 
-    const pdfScenarios = getVisiblePdfScenarios();
+    const pdfScenarios =
+      getVisiblePdfScenarios()
+        .filter(item =>
+          item?.x?.length &&
+          item?.pdf?.length
+        );
 
 
     if (!pdfScenarios.length){
 
-      setPdfControlsVisible(false);
+      console.warn(
+        "No income-distribution data available."
+      );
+
       Plotly.purge("plotMain");
 
       return;
     }
 
 
-    // --------------------------------------------------
-    // Configure time slider
-    // --------------------------------------------------
+    // ===================================================
+    // CHOOSE THE TIME GRID FOR THE SLIDER
+    // Prefer a custom scenario because that is the
+    // currently interactive/user-generated simulation.
+    // ===================================================
 
-    const slider = el("pdfTime");
+    const sliderScenario =
+      pdfScenarios.find(
+        item => item.isCustom
+      )
+      ??
+      pdfScenarios[0];
 
-    slider.min = "0";
-    slider.max = String(
-      Math.max(0, t.length - 1)
-    );
 
-    slider.step = "1";
-    slider.value = "0";
+    const pdfTimes =
+      (
+        sliderScenario?.t &&
+        sliderScenario.t.length
+      )
+        ? sliderScenario.t
+        : [0];
+
+
+    const slider =
+      el("pdfTime");
+
+
+    slider.min =
+      "0";
+
+    slider.max =
+      String(
+        Math.max(
+          0,
+          pdfTimes.length - 1
+        )
+      );
+
+    slider.step =
+      "1";
+
+    slider.value =
+      "0";
+
+
+    const initialTime =
+      Number(
+        pdfTimes[0] ?? 0
+      );
+
 
     el("pdfTimeLabel").textContent =
-      `t = ${(+t[0]).toFixed(2)}`;
+      `t = ${initialTime.toFixed(2)}`;
 
 
-    // --------------------------------------------------
-    // Plot layout
-    // --------------------------------------------------
+    // ===================================================
+    // LAYOUT
+    // ===================================================
 
     const layout = {
 
       title: {
         text: "Income distribution",
-        font: { size: 26 }
+        font: {
+          size: 26
+        }
       },
 
       margin: {
         l: 70,
         r: 10,
         t: 58,
-        b: 56
+        b: 70
       },
 
-      paper_bgcolor: "rgba(0,0,0,0)",
-      plot_bgcolor: "rgba(0,0,0,0)",
+      paper_bgcolor:
+        "rgba(0,0,0,0)",
+
+      plot_bgcolor:
+        "rgba(0,0,0,0)",
+
 
       xaxis: {
-        range: [0, 150000],
-        showline: true,
-        linewidth: 3,
-        linecolor: "#222",
-        tickfont: { size: 16 },
+
+        range: [
+          0,
+          150000
+        ],
+
+        showline:
+          true,
+
+        linewidth:
+          3,
+
+        linecolor:
+          "#222",
+
+        tickfont: {
+          size: 16
+        },
 
         title: {
           text: "Income (£/yr)",
-          font: { size: 16 }
+          font: {
+            size: 16
+          }
         }
+
       },
 
+
       yaxis: {
-        showline: true,
-        linewidth: 3,
-        linecolor: "#222",
-        tickfont: { size: 16 },
+
+        showline:
+          true,
+
+        linewidth:
+          3,
+
+        linecolor:
+          "#222",
+
+        tickfont: {
+          size: 16
+        },
 
         title: {
           text: "Density",
-          font: { size: 16 }
+          font: {
+            size: 16
+          }
         }
+
       },
+
 
       legend: {
 
-      orientation: "h",
+        orientation:
+          "h",
 
-      x: 0,
-      xanchor: "left",
+        x:
+          0,
 
-      y: -0.48,
-      yanchor: "top"
+        xanchor:
+          "left",
 
-    }
+        y:
+          -0.35,
+
+        yanchor:
+          "top"
+
+      }
 
     };
 
 
-    // --------------------------------------------------
-    // Save slider state
-    // --------------------------------------------------
+    // ===================================================
+    // SAVE SLIDER STATE
+    // ===================================================
 
     incomePdfState = {
-      t,
-      scenarios: pdfScenarios,
+
+      t:
+        pdfTimes,
+
+      scenarios:
+        pdfScenarios,
+
       layout
+
     };
 
 
-    // --------------------------------------------------
-    // Initial PDF traces at t = 0
-    // --------------------------------------------------
+    // ===================================================
+    // INITIAL TRACES
+    // ===================================================
 
-    const traces = pdfScenarios.map(item => ({
+    const traces =
+      pdfScenarios
 
-      x: item.x,
+        .map(item => {
 
-      y: item.pdf[0],
-
-      type: "scatter",
-
-      mode: "lines",
-
-      name: item.name,
-
-      line: {
-        width: item.id === "bau" ? 6 : (item.id === "custom" ? 6 : 5),
-        ...(item.id === "bau"
-          ? { color: "black" }
-          : {}),
-        ...(item.id === "custom"
-          ? { dash: "dash" }
-          : {})
-      }
-
-    }));
+          const y =
+            pdfAtTime(
+              item,
+              initialTime
+            );
 
 
-    Plotly.react(
-      "plotMain",
-      traces,
-      layout,
-      {
-        displayModeBar: false,
-        responsive: true
-      }
+          if (
+            !y ||
+            !y.length ||
+            y.length !== item.x.length
+          ){
+
+            console.warn(
+              "Skipping invalid income PDF:",
+              item.name,
+              {
+                xLength:
+                  item.x?.length,
+
+                pdfRows:
+                  item.pdf?.length,
+
+                yLength:
+                  y?.length,
+
+                timeLength:
+                  item.t?.length
+              }
+            );
+
+            return null;
+
+          }
+
+
+          return {
+
+            x:
+              item.x,
+
+            y,
+
+            type:
+              "scatter",
+
+            mode:
+              "lines",
+
+            name:
+              item.name,
+
+            opacity:
+              item.isCustom
+                ? 1
+                : 0.65,
+
+            line: {
+
+              width:
+                item.isCustom
+                  ? 7
+                  : item.id === "bau"
+                    ? 6
+                    : 4,
+
+              color:
+                item.isCustom
+                  ? item.color
+                  : getScenarioColor(
+                      item.id
+                    ),
+
+              ...(item.isCustom
+                ? {
+                    dash: "dash"
+                  }
+                : {})
+
+            }
+
+          };
+
+        })
+
+        .filter(Boolean);
+
+
+    console.log(
+      "Income PDF traces:",
+      traces.map(tr => ({
+        name: tr.name,
+        x: tr.x.length,
+        y: tr.y.length
+      }))
     );
 
 
-    // --------------------------------------------------
-    // Export state
-    // --------------------------------------------------
+    if (!traces.length){
+
+      console.warn(
+        "Income PDF data exists but no valid traces could be created."
+      );
+
+      Plotly.purge(
+        "plotMain"
+      );
+
+      return;
+    }
+
+
+    Plotly.react(
+
+      "plotMain",
+
+      traces,
+
+      layout,
+
+      {
+        displayModeBar:
+          false,
+
+        responsive:
+          true
+      }
+
+    );
+
+
+    // ===================================================
+    // EXPORT STATE
+    // ===================================================
 
     lastRenderState.visiblePlots.push({
 
-      key: "inc_pdf",
+      key:
+        "inc_pdf",
 
-      title: "Income distribution",
+      title:
+        "Income distribution",
 
-      x: pdfScenarios[0].x.slice(),
+      series:
+        traces.map(tr => ({
 
-      series: traces.map(tr => ({
-        name: tr.name,
-        y: tr.y.slice()
-      }))
+          name:
+            tr.name,
+
+          x:
+            Array.from(
+              tr.x
+            ),
+
+          y:
+            Array.from(
+              tr.y
+            )
+
+        }))
 
     });
 
@@ -5289,40 +6871,82 @@ let renderTimer = null;
 
 // Recompute only the user-created scenario.
 // This is used for controls that do not alter the predefined reference scenarios.
-let customSimTimer = null;
 let customSimGeneration = 0;
+const scenarioSimTimers = new Map();
+const scenarioSimGenerations = new Map();
 
-async function recomputeCustomScenario(){
-  const generation = ++customSimGeneration;
 
-  pullUIIntoActiveScenario();
-  setGlobalLabels();
+async function recomputeScenario(index){
 
-  if (!landsState.length){
-    customScenarioResult = null;
-    await runSim(false);
+  const sc = scenarioConfigs[index];
+
+  if (!sc)
+    return;
+
+
+  // Generation counter for THIS scenario only
+  const generation =
+    (scenarioSimGenerations.get(index) || 0) + 1;
+
+  scenarioSimGenerations.set(
+    index,
+    generation
+  );
+
+
+  const data =
+    await fetchSim(
+      buildPayloadFromScenario(sc)
+    );
+
+
+  // Ignore stale response for this scenario
+  if (
+    scenarioSimGenerations.get(index) !== generation
+  ){
     return;
   }
 
-  const data = await fetchSim(
-    buildPayloadFromLands(landsState)
-  );
 
-  // Ignore a stale response if the user changed another control meanwhile.
-  if (generation !== customSimGeneration) return;
+  // Scenario may have been removed while request was running
+  if (!scenarioConfigs[index])
+    return;
 
-  customScenarioResult = data;
+
+  customScenarioResults[index] =
+    data;
+
+
+
+
+  // REDRAW ONLY — do not recompute everything
   await runSim(false);
 }
 
-function triggerCustomSim(){
-  setGlobalLabels();
-  clearTimeout(customSimTimer);
-  customSimTimer = setTimeout(
-    () => recomputeCustomScenario(),
-    300
+
+function triggerScenarioSim(index){
+
+  const oldTimer =
+    scenarioSimTimers.get(index);
+
+  if (oldTimer){
+    clearTimeout(oldTimer);
+  }
+
+
+  const timer =
+    setTimeout(
+      () => recomputeScenario(index),
+      300
+    );
+
+
+  scenarioSimTimers.set(
+    index,
+    timer
   );
 }
+
 
 // Recompute all predefined scenarios + the custom scenario.
 function triggerSim(){
@@ -5342,7 +6966,6 @@ function triggerSim(){
 // Redraw using already-computed scenarioResults
 function triggerRender(){
 
-  pullUIIntoActiveScenario();
   setGlobalLabels();
 
   clearTimeout(renderTimer);
@@ -5380,13 +7003,16 @@ function triggerRender(){
   "lamRate",
   "eta"
 ].forEach(id => {
+
   const node = el(id);
+
   if (node){
     node.addEventListener(
       "input",
-      triggerCustomSim
+      triggerSim
     );
   }
+
 });
 
 // rolling controls
@@ -5434,17 +7060,13 @@ el("sideViewToggle").addEventListener("click", () => {
   updateSideView();
 });
 
-// initial
+// initial STARTUP
 setupScenarioToggles();
 setupDonutScenarioButtons();
-
-refreshScenarioSelect();
-renderLands();
-updateShareTotal();
+setupDonutCustomScenarioSelect();
+renderScenarios();
 setGlobalLabels();
-
 setAllPlotsMode(false, false);
-
 runSim(true);
 
 window.addEventListener("resize", () => {
