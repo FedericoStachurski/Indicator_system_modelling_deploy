@@ -107,49 +107,6 @@ def savgol_smooth_years(
 
     return y_smooth
 
-
-import numpy as np
-from scipy.stats import truncnorm
-
-
-def sample_tau(
-    n_parcels=1,
-    mu_tau=0.25,
-    sigma_tau=0.02,
-    tau_min=0.05,
-    tau_max=0.95,
-    rng=None,
-):
-    """
-    Sample parcel-specific regenerative durations tau_i from a
-    truncated normal distribution:
-
-        tau_i ~ N_T(mu_tau, sigma_tau, tau_min, tau_max)
-
-    Returns
-    -------
-    tau : ndarray
-        Array of sampled tau_i values.
-    """
-
-    if rng is None:
-        rng = np.random.default_rng()
-
-    a = (tau_min - mu_tau) / sigma_tau
-    b = (tau_max - mu_tau) / sigma_tau
-
-    tau = truncnorm.rvs(
-        a,
-        b,
-        loc=mu_tau,
-        scale=sigma_tau,
-        size=n_parcels,
-        random_state=rng,
-    )
-
-    return tau
-
-
 import numpy as np
 from scipy.stats import truncnorm
 
@@ -708,6 +665,10 @@ def simulate_multi_land(
     T_max: float,
     n_points: int = 500,
 
+    # Scenario-level farming-cycle distribution
+    mu_tau: float = 0.30,
+    sigma_tau: float = 0.02,
+
     # macro initial conditions + rates
     initial_population: float = 5_000_000,
     population_growth_rate: float = 0.01,
@@ -755,7 +716,7 @@ def simulate_multi_land(
     nu: float | None = None,
 
     # Random seed
-    random_seed: int | None = 42
+    random_seed: int | None = None,
 
 
 ) -> SimulationResult:
@@ -766,6 +727,34 @@ def simulate_multi_land(
     rng = np.random.default_rng(random_seed)
 
     n_lands = len(lands)
+    tau_values = sample_tau(
+            n_parcels=n_lands,
+            mu_tau=mu_tau,
+            sigma_tau=sigma_tau,
+            tau_min=0.05,
+            tau_max=0.95,
+            rng=rng,
+        )
+
+    # ------------------------------------------------------------
+    # Sample parcel-specific initial soil conditions
+    # S0_i ~ Uniform(0.2, 0.8)
+    # Use a separate RNG so this does not alter tau/phase sampling.
+    # ------------------------------------------------------------
+
+    s0_rng = np.random.default_rng(
+        None if random_seed is None
+        else random_seed + 1
+    )
+
+    s0_values = s0_rng.uniform(
+        0.2,
+        0.8,
+        size=n_lands
+    )
+
+    n_steps = int(round(float(n_points) * float(T_max)))
+
     n_steps = int(round(float(n_points) * float(T_max)))
     t_eval = np.linspace(0.0, float(T_max), n_steps + 1)
 
@@ -803,17 +792,7 @@ def simulate_multi_land(
 
         D_fun = SCENARIOS[land.scenario_name]
 
-        if land.sample_tau: # check if user input or not 
-            tau_i = sample_tau(
-                n_parcels=1,
-                mu_tau=land.mu_tau,
-                sigma_tau=land.sigma_tau,
-                tau_min=0.05,
-                tau_max=0.95,
-                rng=rng,
-            )[0]
-        else:
-            tau_i = float(land.tau)
+        tau_i = float(tau_values[i])
 
 
         # sample one phase phi_{i,j} for each year
@@ -824,7 +803,7 @@ def simulate_multi_land(
             _soil_ode_single,
             method="RK45",
             t_span=(0.0, T_max),
-            y0=[land.S0],
+            y0=[float(s0_values[i])],
             t_eval=t_eval,
             max_step=0.01,
             rtol=1e-8,
@@ -963,6 +942,7 @@ def simulate_multi_land(
     r0 = 0.5
 
     # Reinvestment factor nu = J(0) / r0
+    # Calibrate nu so the initial reinvestment ratio is r0
     nu = J_0 / r0
 
 
