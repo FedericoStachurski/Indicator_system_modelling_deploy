@@ -22,3 +22,7 @@ fast_api/static/paper/*.pdf
 # .egg files
 *.egg
 *.egg-info/
+
+# Dashboard system-map PDFs required by FastAPI
+!fast_api/static/paper/System_map_vertical.pdf
+!fast_api/static/paper/System_map_vertical_placeholder.pdf
