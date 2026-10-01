@@ -46,12 +46,16 @@ def run_simulation(req: SimRequest) -> SimResponse:
     # ---- Reinvestment parameters ----
     theta = getattr(req, "theta", 0.51)
     eta = getattr(req, "eta", 0.05)
-    nu = getattr(req, "nu", 6.375e8)
+    nu = getattr(req, "nu", 6.375e10)
 
     res = simulate_multi_land(
         lands=lands,
         T_max=req.T_max,
         n_points=req.n_points,
+
+        # scenario-level farming-cycle distribution
+        mu_tau=req.mu_tau,
+        sigma_tau=req.sigma_tau,
 
         # macro rates
         population_growth_rate=req.population_growth_rate,

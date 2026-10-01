@@ -32,6 +32,10 @@ class SimRequest(BaseModel):
     T_max: float = 50.0
     n_points: int = 500
 
+    # Scenario-level farming-cycle distribution
+    mu_tau: float = Field(default=0.30, ge=0.05, le=0.95)
+    sigma_tau: float = Field(default=0.02, gt=0.0, le=0.20)
+
     # macro rates
     population_growth_rate: float = 0.01
     income_growth_rate: float = 0.005
@@ -64,7 +68,7 @@ class SimRequest(BaseModel):
     # reinvestment feedback parameters
     theta: float = 0.51
     eta: float = 0.05
-    nu: float = 6.375e10
+    nu: float = 6.375e8
 
 
 class SimResponse(BaseModel):
